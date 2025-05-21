@@ -1,3 +1,6 @@
+import AdminSettings from "@/components/AdminSettings";
+import ExperiencePrompt from "@/components/ExperiencePrompt";
+
 import ImageUploader from "@/components/ImageUploader";
 import { findOrCreateExperience } from "@/lib/helpers";
 import { whopApi } from "@/lib/whop-api";
@@ -26,8 +29,12 @@ export default async function ExperiencePage({
   });
 
   return (
-    <div className="flex flex-col gap-4 p-4">
-      <ImageUploader />
+    <div className="flex flex-col gap-4 p-4 h-screen items-center justify-center">
+      <ExperiencePrompt
+        prompt={experience.prompt}
+        accessLevel={hasAccess.hasAccessToExperience.accessLevel}
+        experienceId={experienceId}
+      />
     </div>
   );
 }
