@@ -5,10 +5,7 @@ import { headers } from "next/headers";
 
 const prisma = new PrismaClient();
 
-export async function PUT(
-  request: Request,
-  { params }: { params: { experienceId: string } }
-) {
+export async function PUT(request: Request) {
   try {
     const { prompt } = await request.json();
     const headersList = await headers();
@@ -16,9 +13,20 @@ export async function PUT(
     if (!userToken) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    const url = new URL(request.url);
+    const match = url.pathname.match(/experiences\/([^/]+)\/generate/);
+    const experienceId = match ? match[1] : null;
+
+    if (!experienceId) {
+      return NextResponse.json(
+        { error: "Missing experienceId" },
+        { status: 400 }
+      );
+    }
+
     const hasAccess = await whopApi.CheckIfUserHasAccessToExperience({
       userId: userToken.userId,
-      experienceId: params.experienceId,
+      experienceId,
     });
     if (hasAccess.hasAccessToExperience.accessLevel !== "admin") {
       return NextResponse.json(
@@ -29,7 +37,7 @@ export async function PUT(
 
     const updatedExperience = await prisma.experience.update({
       where: {
-        id: params.experienceId,
+        id: experienceId,
       },
       data: {
         prompt,
@@ -39,8 +47,8 @@ export async function PUT(
     await whopApi.SendNotification({
       input: {
         content: prompt,
-        experienceId: params.experienceId,
-        userIds: ["user_nrxHyu5XRFjkS"],
+        experienceId,
+        //   userIds: ["user_nrxHyu5XRFjkS"],
         title: "Prompt updated ✨",
       },
     });
