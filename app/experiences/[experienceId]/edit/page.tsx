@@ -1,5 +1,10 @@
 import EditExperiencePage from "@/components/EditExperiencePage";
 
-export default function Page({ params }: { params: { experienceId: string } }) {
-  return <EditExperiencePage experienceId={params.experienceId} />;
+export default async function Page({
+  params,
+}: {
+  params: Promise<{ experienceId: string; accessPassId: string }>;
+}) {
+  const { experienceId } = await params;
+  return <EditExperiencePage experienceId={experienceId} />;
 }
