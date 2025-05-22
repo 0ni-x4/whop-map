@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Theme } from "frosted-ui";
+import { WhopThemeProvider } from "@whop-apps/sdk";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -28,11 +29,11 @@ export default function RootLayout({
       <body
         className={`  ${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <Theme appearance="dark">
+        <WhopThemeProvider>
           <div className="flex flex-col h-screen">
             <div className="flex-1">{children}</div>
           </div>
-        </Theme>
+        </WhopThemeProvider>
       </body>
     </html>
   );

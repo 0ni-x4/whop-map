@@ -58,15 +58,17 @@ export default async function ExperiencePage({
         >
           <Button className="w-full">Begin</Button>
         </Link>
-        <Link
-          className="w-full"
-          target="_blank"
-          href={`https://whop.com/apps/${process.env.WHOP_APP_ID}/install/`}
-        >
-          <Button variant="outline" className="w-full">
-            Install app in your whop
-          </Button>
-        </Link>
+        {hasAccess.hasAccessToExperience.accessLevel !== "admin" && (
+          <Link
+            className="w-full"
+            target="_blank"
+            href={`https://whop.com/apps/${process.env.WHOP_APP_ID}/install/`}
+          >
+            <Button variant="outline" className="w-full">
+              Install app in your whop
+            </Button>
+          </Link>
+        )}
       </div>
     </div>
   );
