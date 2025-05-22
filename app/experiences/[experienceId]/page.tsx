@@ -20,12 +20,16 @@ export default async function ExperiencePage({
   // // For a real integration, you would validate the token to get the Whop user ID.
   const { userId } = await verifyUserToken(headersList);
 
-  const experience = await findOrCreateExperience(experienceId);
+  await findOrCreateExperience(experienceId);
 
   const hasAccess = await whopApi.CheckIfUserHasAccessToExperience({
     userId,
     experienceId,
   });
+
+  if (hasAccess.hasAccessToExperience.accessLevel === "no_access") {
+    return <div>Unable to authenticate</div>;
+  }
 
   return (
     <div className="flex flex-col max-w-[500px] my-auto mx-auto gap-6 p-4 h-screen items-center justify-center">
@@ -34,9 +38,23 @@ export default async function ExperiencePage({
         At any given time, I will submit a prompt for everyone in my community
         to generate an image.
       </div>
-      <Link className="w-full" href={`/experiences/${experienceId}/generator`}>
-        <Button className="w-full">Begin</Button>
-      </Link>
+      <div className="flex flex-col gap-4 w-full">
+        <Link
+          className="w-full"
+          href={`/experiences/${experienceId}/generator`}
+        >
+          <Button className="w-full">Begin</Button>
+        </Link>
+        <Link
+          className="w-full"
+          target="_blank"
+          href={`https://whop.com/apps/${process.env.WHOP_APP_ID}/install/`}
+        >
+          <Button variant="outline" className="w-full">
+            Install app in your whop
+          </Button>
+        </Link>
+      </div>
     </div>
   );
 }
