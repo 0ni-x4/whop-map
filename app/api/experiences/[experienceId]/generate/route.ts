@@ -11,11 +11,20 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-export async function POST(
-  request: Request,
-  context: { params: { experienceId: string } }
-) {
+export async function POST(request: Request) {
   try {
+    // Extract experienceId from the URL
+    const url = new URL(request.url);
+    const match = url.pathname.match(/experiences\/([^/]+)\/generate/);
+    const experienceId = match ? match[1] : null;
+
+    if (!experienceId) {
+      return NextResponse.json(
+        { error: "Missing experienceId" },
+        { status: 400 }
+      );
+    }
+
     const headersList = await headers();
     const userToken = await verifyUserToken(headersList);
     if (!userToken) {
@@ -24,7 +33,7 @@ export async function POST(
 
     const hasAccess = await whopApi.CheckIfUserHasAccessToExperience({
       userId: userToken.userId,
-      experienceId: context.params.experienceId,
+      experienceId,
     });
 
     if (!hasAccess.hasAccessToExperience.hasAccess) {
@@ -42,7 +51,7 @@ export async function POST(
 
     const experience = await prisma.experience.findUnique({
       where: {
-        id: context.params.experienceId,
+        id: experienceId,
       },
     });
 
@@ -133,7 +142,7 @@ export async function POST(
     const post = await whopApi.CreateForumPost({
       input: {
         experienceId: forumId,
-        content: `@${publicUser.publicUser?.username} generated this image with the prompt: "${experience.prompt}"\n\nTry it yourself here: https://whop.com/experiences/${experience.id}\n\nBefore vs After ⬇️`,
+        content: `@${publicUser.publicUser?.username} generated this image with the prompt: "${experience.prompt}"\n\nTry it yourself here: https://whop.com/${experience.bizId}/${experience.id}/app\n\nBefore vs After ⬇️`,
         attachments: [
           { directUploadId: originalAttachmentId },
           { directUploadId: generatedAttachmentId },
