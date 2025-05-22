@@ -14,7 +14,7 @@ export default function ExperiencePrompt({
   return (
     <div>
       <div className="flex justify-center items-center">
-        <div className="text-4xl font-bold">
+        <div className="text-4xl font-bold text-center">
           {prompt ? `"${prompt}"` : "Creator has not set a prompt yet."}
         </div>
       </div>

@@ -30,7 +30,7 @@ export default function EditExperiencePage({
         throw new Error("Failed to update experience");
       }
 
-      router.push(`/experiences/${experienceId}`);
+      router.push(`/experiences/${experienceId}/generator`);
       router.refresh();
     } catch (error) {
       console.error("Error updating experience:", error);

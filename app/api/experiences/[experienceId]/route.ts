@@ -14,7 +14,7 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     const url = new URL(request.url);
-    const match = url.pathname.match(/experiences\/([^/]+)\/generate/);
+    const match = url.pathname.match(/experiences\/([^/]+)/);
     const experienceId = match ? match[1] : null;
 
     if (!experienceId) {

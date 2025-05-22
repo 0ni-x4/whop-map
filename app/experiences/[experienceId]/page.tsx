@@ -33,7 +33,7 @@ export default async function ExperiencePage({
 
   return (
     <div className="flex flex-col max-w-[500px] my-auto mx-auto gap-6 p-4 h-screen items-center justify-center">
-      <div className="text-4xl font-bold">
+      <div className="text-4xl font-bold text-center">
         Welcome to{" "}
         {hasAccess.hasAccessToExperience.accessLevel === "admin"
           ? "your"
@@ -56,7 +56,7 @@ export default async function ExperiencePage({
           className="w-full"
           href={`/experiences/${experienceId}/generator`}
         >
-          <Button className="w-full">View prompt</Button>
+          <Button className="w-full">Begin</Button>
         </Link>
         <Link
           className="w-full"
