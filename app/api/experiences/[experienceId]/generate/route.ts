@@ -13,7 +13,7 @@ const openai = new OpenAI({
 
 export async function POST(
   request: Request,
-  { params }: { params: { experienceId: string } }
+  context: { params: { experienceId: string } }
 ) {
   try {
     const headersList = await headers();
@@ -24,7 +24,7 @@ export async function POST(
 
     const hasAccess = await whopApi.CheckIfUserHasAccessToExperience({
       userId: userToken.userId,
-      experienceId: params.experienceId,
+      experienceId: context.params.experienceId,
     });
 
     if (!hasAccess.hasAccessToExperience.hasAccess) {
@@ -42,7 +42,7 @@ export async function POST(
 
     const experience = await prisma.experience.findUnique({
       where: {
-        id: params.experienceId,
+        id: context.params.experienceId,
       },
     });
 

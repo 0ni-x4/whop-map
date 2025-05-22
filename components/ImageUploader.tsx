@@ -167,7 +167,7 @@ export default function ImageUploader({
               onClick={hasGenerated ? handleCopy : handleGenerate}
               className="flex-1"
             >
-              {hasGenerated ? "Copy Image URL" : "Upload Image"}
+              {hasGenerated ? "Copy Image URL" : "Generate Image"}
             </Button>
           </div>
         </div>
