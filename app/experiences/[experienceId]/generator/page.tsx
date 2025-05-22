@@ -1,13 +1,11 @@
 import ExperiencePrompt from "@/components/ExperiencePrompt";
-import { Button } from "@/components/ui/button";
 
 import { findOrCreateExperience } from "@/lib/helpers";
 import { whopApi } from "@/lib/whop-api";
 import { verifyUserToken } from "@whop/api";
 import { headers } from "next/headers";
-import Link from "next/link";
 
-export default async function ExperiencePage({
+export default async function GeneratorPage({
   params,
   searchParams,
 }: {
@@ -28,15 +26,12 @@ export default async function ExperiencePage({
   });
 
   return (
-    <div className="flex flex-col max-w-[500px] my-auto mx-auto gap-6 p-4 h-screen items-center justify-center">
-      <div className="text-4xl font-bold">Welcome to my generator.</div>
-      <div className="text-center">
-        At any given time, I will submit a prompt for everyone in my community
-        to generate an image.
-      </div>
-      <Link className="w-full" href={`/experiences/${experienceId}/generator`}>
-        <Button className="w-full">Begin</Button>
-      </Link>
+    <div className="flex flex-col gap-4 p-4 h-screen items-center justify-center">
+      <ExperiencePrompt
+        prompt={experience.prompt}
+        accessLevel={hasAccess.hasAccessToExperience.accessLevel}
+        experienceId={experienceId}
+      />
     </div>
   );
 }

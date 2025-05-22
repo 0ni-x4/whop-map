@@ -42,7 +42,7 @@ export default function EditExperiencePage({
 
   return (
     <div className="max-w-2xl mx-auto p-6">
-      <h1 className="text-2xl font-bold mb-6">Edit Experience</h1>
+      <h1 className="text-2xl font-bold mb-6">Edit Prompt</h1>
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
@@ -57,7 +57,7 @@ export default function EditExperiencePage({
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             className="w-full min-h-[200px] p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            placeholder="Enter your prompt here..."
+            placeholder="Enter a new prompt here..."
             required
           />
         </div>

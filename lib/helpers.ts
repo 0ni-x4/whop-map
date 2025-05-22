@@ -4,7 +4,7 @@ import { PrismaClient } from "@prisma/client";
 const prisma = new PrismaClient();
 
 export async function findOrCreateExperience(experienceId: string) {
-  const whopExperience = await whopApi.Experience({ experienceId });
+  const whopExperience = await whopApi.GetExperience({ experienceId });
   const experienceName = whopExperience.experience.name;
   const bizName = whopExperience.experience.company.title;
   const bizId = whopExperience.experience.company.id;
@@ -24,7 +24,7 @@ export async function findOrCreateExperience(experienceId: string) {
       },
     });
     sendWhopWebhook({
-      content: `Someone installed the dino game in their whop!`,
+      content: "Someone installed the creator AI app in their whop!",
     });
   } else {
     experience = await prisma.experience.update({
@@ -52,7 +52,8 @@ export async function sendWhopWebhook({
     },
   });
 
-  const webhookUrl = experience?.webhookUrl || process.env.DEFAULT_WEBHOOK_URL!;
+  const webhookUrl =
+    experience?.webhookUrl || process.env.DEFAULT_WEBHOOK_URL || "";
 
   try {
     const response = await fetch(webhookUrl, {

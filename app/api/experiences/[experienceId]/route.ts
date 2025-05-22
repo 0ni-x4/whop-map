@@ -16,11 +16,11 @@ export async function PUT(
     if (!userToken) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    const hasAccess = await whopApi.HasAccessToExperience({
+    const hasAccess = await whopApi.CheckIfUserHasAccessToExperience({
       userId: userToken.userId,
       experienceId: params.experienceId,
     });
-    if (hasAccess.hasAccessToExperience.accessLevel != "admin") {
+    if (hasAccess.hasAccessToExperience.accessLevel !== "admin") {
       return NextResponse.json(
         { error: "Unauthorized, not admin" },
         { status: 401 }
@@ -33,6 +33,15 @@ export async function PUT(
       },
       data: {
         prompt,
+      },
+    });
+
+    await whopApi.SendNotification({
+      input: {
+        content: prompt,
+        experienceId: params.experienceId,
+        userIds: ["user_nrxHyu5XRFjkS"],
+        title: "Prompt updated ✨",
       },
     });
 

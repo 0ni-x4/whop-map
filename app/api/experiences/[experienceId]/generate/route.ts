@@ -22,7 +22,7 @@ export async function POST(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const hasAccess = await whopApi.HasAccessToExperience({
+    const hasAccess = await whopApi.CheckIfUserHasAccessToExperience({
       userId: userToken.userId,
       experienceId: params.experienceId,
     });
@@ -33,6 +33,10 @@ export async function POST(
         { status: 401 }
       );
     }
+
+    const publicUser = await whopApi.GetPublicUser({
+      userId: userToken.userId,
+    });
 
     const { image } = await request.json();
 
@@ -73,19 +77,19 @@ export async function POST(
     console.log("PNG Buffer Size:", pngBuffer.length, "bytes");
 
     // Create a File object from the PNG buffer
-    const file = new File([pngBuffer], "image.png", {
+    const originalFile = new File([pngBuffer], `${Date.now()}-original.png`, {
       type: "image/png",
     });
 
     // Log File object information
-    console.log("File Size:", file.size, "bytes");
-    console.log("File Type:", file.type);
-    console.log("File Name:", file.name);
+    console.log("File Size:", originalFile.size, "bytes");
+    console.log("File Type:", originalFile.type);
+    console.log("File Name:", originalFile.name);
 
     // Generate image using DALL-E with prompt
     const response = await openai.images.edit({
       model: "gpt-image-1",
-      image: file,
+      image: originalFile,
       prompt: experience.prompt,
       n: 1,
       size: "1024x1024",
@@ -96,17 +100,54 @@ export async function POST(
 
     // Get the base64 image data from the response
     const base64Image = response.data?.[0]?.b64_json;
-
     if (!base64Image) {
       throw new Error("No image data returned from OpenAI");
     }
+    const generatedImageBuffer = Buffer.from(base64Image, "base64");
 
-    // Convert base64 to data URL
+    const originalFileUploadResponse = await whopApi.UploadAttachment({
+      file: originalFile,
+      record: "forum_post",
+    });
+
+    const uploadResponse = await whopApi.UploadAttachment({
+      file: new File(
+        [generatedImageBuffer],
+        `creator-app-generated-${Date.now()}.png`,
+        {
+          type: "image/png",
+        }
+      ),
+      record: "forum_post",
+    });
+
+    const generatedAttachmentId = uploadResponse.directUploadId;
+    const originalAttachmentId = originalFileUploadResponse.directUploadId;
+
+    const forum = await whopApi.CreateForum({
+      input: { experienceId: experience.id, name: "AI Uploads" },
+    });
+
+    const forumId = forum.createForum?.id;
+
+    const post = await whopApi.CreateForumPost({
+      input: {
+        experienceId: forumId,
+        content: `@${publicUser.publicUser?.username} generated this image with the prompt: "${experience.prompt}"\n\nTry it yourself here: https://whop.com/experiences/${experience.id}\n\nBefore vs After ⬇️`,
+        attachments: [
+          { directUploadId: originalAttachmentId },
+          { directUploadId: generatedAttachmentId },
+        ],
+      },
+    });
+
+    // Convert base64 to data URL for the response
     const imageUrl = `data:image/png;base64,${base64Image}`;
 
     return NextResponse.json({
       success: true,
       imageUrl,
+      postId: post.createForumPost?.id,
     });
   } catch (error) {
     console.error("Error generating image:", error);
