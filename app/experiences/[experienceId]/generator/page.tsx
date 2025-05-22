@@ -7,10 +7,8 @@ import { headers } from "next/headers";
 
 export default async function GeneratorPage({
   params,
-  searchParams,
 }: {
   params: Promise<{ experienceId: string; accessPassId: string }>;
-  searchParams: Promise<{ accessPassId: string }>;
 }) {
   const { experienceId } = await params;
 
