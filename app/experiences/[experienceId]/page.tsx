@@ -33,17 +33,30 @@ export default async function ExperiencePage({
 
   return (
     <div className="flex flex-col max-w-[500px] my-auto mx-auto gap-6 p-4 h-screen items-center justify-center">
-      <div className="text-4xl font-bold">Welcome to my generator.</div>
-      <div className="text-center">
-        At any given time, I will submit a prompt for everyone in my community
-        to generate an image.
+      <div className="text-4xl font-bold">
+        Welcome to{" "}
+        {hasAccess.hasAccessToExperience.accessLevel === "admin"
+          ? "your"
+          : "my"}{" "}
+        generator.
       </div>
+      {hasAccess.hasAccessToExperience.accessLevel === "admin" ? (
+        <div className="text-center">
+          At any given time, you can submit a prompt for everyone in your
+          community to generate an image.
+        </div>
+      ) : (
+        <div className="text-center">
+          At any given time, I will submit a prompt for everyone in my community
+          to generate an image.
+        </div>
+      )}
       <div className="flex flex-col gap-4 w-full">
         <Link
           className="w-full"
           href={`/experiences/${experienceId}/generator`}
         >
-          <Button className="w-full">Begin</Button>
+          <Button className="w-full">View prompt</Button>
         </Link>
         <Link
           className="w-full"
