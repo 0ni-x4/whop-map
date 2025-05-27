@@ -6,8 +6,6 @@ import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import Loader from "./Loader";
 
-const MULTIPART_UPLOAD_CHUNK_SIZE = 5 * 1024 * 1024; // 5MB
-
 export default function ImageUploader({
   experienceId,
   prompt,
