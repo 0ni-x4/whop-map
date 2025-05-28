@@ -5,14 +5,8 @@ import { headers } from "next/headers";
 
 const prisma = new PrismaClient();
 
-export async function PUT(request: Request) {
+export async function GET(request: Request) {
   try {
-    const { prompt } = await request.json();
-    const headersList = await headers();
-    const userToken = await verifyUserToken(headersList);
-    if (!userToken) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
     const url = new URL(request.url);
     const match = url.pathname.match(/experiences\/([^/]+)/);
     const experienceId = match ? match[1] : null;
@@ -24,40 +18,41 @@ export async function PUT(request: Request) {
       );
     }
 
+    const headersList = await headers();
+    const userToken = await verifyUserToken(headersList);
+    if (!userToken) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const hasAccess = await whopApi.CheckIfUserHasAccessToExperience({
       userId: userToken.userId,
       experienceId,
     });
-    if (hasAccess.hasAccessToExperience.accessLevel !== "admin") {
+
+    if (!hasAccess.hasAccessToExperience.hasAccess) {
       return NextResponse.json(
-        { error: "Unauthorized, not admin" },
+        { error: "Unauthorized, no access" },
         { status: 401 }
       );
     }
 
-    const updatedExperience = await prisma.experience.update({
-      where: {
-        id: experienceId,
-      },
-      data: {
-        prompt,
-      },
+    const experience = await prisma.experience.findUnique({
+      where: { id: experienceId },
+      include: { places: true },
     });
 
-    await whopApi.SendNotification({
-      input: {
-        content: prompt,
-        experienceId,
-        //   userIds: ["user_nrxHyu5XRFjkS"],
-        title: "Prompt updated ✨",
-      },
-    });
+    if (!experience) {
+      return NextResponse.json(
+        { error: "Experience not found" },
+        { status: 404 }
+      );
+    }
 
-    return NextResponse.json(updatedExperience);
+    return NextResponse.json(experience);
   } catch (error) {
-    console.error("Error updating experience:", error);
+    console.error("Error fetching experience:", error);
     return NextResponse.json(
-      { error: "Failed to update experience" },
+      { error: "Failed to fetch experience" },
       { status: 500 }
     );
   }

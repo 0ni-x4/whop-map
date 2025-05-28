@@ -11,6 +11,7 @@ export async function findOrCreateExperience(experienceId: string) {
 
   let experience = await prisma.experience.findUnique({
     where: { id: experienceId },
+    include: { places: true },
   });
   if (!experience) {
     experience = await prisma.experience.create({
@@ -19,20 +20,94 @@ export async function findOrCreateExperience(experienceId: string) {
         title: experienceName,
         bizName,
         bizId,
-        prompt: "",
         webhookUrl: "",
       },
+      include: { places: true },
     });
     sendWhopWebhook({
-      content: "Someone installed the creator AI app in their whop!",
+      content: "Someone installed the map places app in their whop!",
     });
   } else {
     experience = await prisma.experience.update({
       where: { id: experienceId },
       data: { title: experienceName, bizName, bizId },
+      include: { places: true },
     });
   }
   return experience;
+}
+
+export async function createPlace({
+  experienceId,
+  name,
+  description,
+  latitude,
+  longitude,
+  address,
+  category,
+}: {
+  experienceId: string;
+  name: string;
+  description?: string;
+  latitude: number;
+  longitude: number;
+  address?: string;
+  category?: string;
+}) {
+  return await prisma.place.create({
+    data: {
+      experienceId,
+      name,
+      description,
+      latitude,
+      longitude,
+      address,
+      category,
+    },
+  });
+}
+
+export async function getPlaces(experienceId: string) {
+  return await prisma.place.findMany({
+    where: { experienceId },
+    orderBy: { createdAt: 'desc' },
+  });
+}
+
+export async function deletePlace(placeId: string) {
+  return await prisma.place.delete({
+    where: { id: placeId },
+  });
+}
+
+export async function updatePlace({
+  placeId,
+  name,
+  description,
+  latitude,
+  longitude,
+  address,
+  category,
+}: {
+  placeId: string;
+  name?: string;
+  description?: string;
+  latitude?: number;
+  longitude?: number;
+  address?: string;
+  category?: string;
+}) {
+  return await prisma.place.update({
+    where: { id: placeId },
+    data: {
+      ...(name !== undefined && { name }),
+      ...(description !== undefined && { description }),
+      ...(latitude !== undefined && { latitude }),
+      ...(longitude !== undefined && { longitude }),
+      ...(address !== undefined && { address }),
+      ...(category !== undefined && { category }),
+    },
+  });
 }
 
 export async function sendWhopWebhook({
@@ -54,6 +129,12 @@ export async function sendWhopWebhook({
 
   const webhookUrl =
     experience?.webhookUrl || process.env.DEFAULT_WEBHOOK_URL || "";
+
+  // Skip webhook if no URL is configured
+  if (!webhookUrl || webhookUrl.trim() === "") {
+    console.log("No webhook URL configured, skipping webhook");
+    return;
+  }
 
   try {
     const response = await fetch(webhookUrl, {

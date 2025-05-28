@@ -15,10 +15,24 @@ datasource db {
 }
 
 model Experience {
-  id     String @unique
-  title  String
-  prompt String
+  id         String  @unique
+  title      String
   webhookUrl String
-  bizName String
-  bizId String
+  bizName    String
+  bizId      String
+  places     Place[]
+}
+
+model Place {
+  id           String     @id @default(cuid())
+  name         String
+  description  String?
+  latitude     Float
+  longitude    Float
+  address      String?
+  category     String?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  experience   Experience @relation(fields: [experienceId], references: [id], onDelete: Cascade)
+  experienceId String
 }
