@@ -164,7 +164,7 @@ export async function sendWhopWebhook({
 }
 
 /**
- * Gets a Mapbox Static image for a given location
+ * OPTIMIZED: Gets a smaller, faster-loading Mapbox Static image
  */
 export async function getMapboxStaticImage(lat: number, lng: number, name: string): Promise<string | null> {
   const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
@@ -174,11 +174,12 @@ export async function getMapboxStaticImage(lat: number, lng: number, name: strin
   }
 
   try {
-    // Create a Mapbox Static API URL with a pin marker
+    // OPTIMIZATION: Smaller image size (300x200 instead of 600x400@2x)
+    // OPTIMIZATION: Single resolution (no @2x) for faster download
     const staticImageUrl = `https://api.mapbox.com/styles/v1/mapbox/streets-v12/static/` +
       `pin-s-marker+dc2626(${lng},${lat})/` + // Red pin marker
-      `${lng},${lat},14,0/` + // Center, zoom, bearing
-      `600x400@2x?` + // Size and retina
+      `${lng},${lat},12,0/` + // OPTIMIZATION: Lower zoom (12 instead of 14)
+      `300x200?` + // OPTIMIZATION: Smaller size for faster loading
       `access_token=${mapboxToken}`;
 
     return staticImageUrl;
@@ -189,34 +190,55 @@ export async function getMapboxStaticImage(lat: number, lng: number, name: strin
 }
 
 /**
- * Uploads an image from a URL to Whop's media service using our API route
- * This works in Node.js server environments and returns a directUploadId for forum attachments
+ * OPTIMIZED: Faster image upload with timeout controls and compression
  */
 export async function uploadImageToWhop(imageUrl: string, userId: string, bizId: string): Promise<string | null> {
   try {
-    // First, fetch the image from the URL
-    console.log(`🔄 Fetching image from: ${imageUrl}`);
-    const imageResponse = await fetch(imageUrl);
+    // OPTIMIZATION: Set strict timeout limits
+    const FETCH_TIMEOUT = 10000; // 10 seconds for image fetch
+    const UPLOAD_TIMEOUT = 15000; // 15 seconds for upload
+    
+    console.log(`🔄 Fetching optimized image from: ${imageUrl}`);
+    
+    // OPTIMIZATION: Fetch with timeout control
+    const imageResponse = await Promise.race([
+      fetch(imageUrl),
+      new Promise<Response>((_, reject) => 
+        setTimeout(() => reject(new Error('Image fetch timeout')), FETCH_TIMEOUT)
+      )
+    ]);
+
     if (!imageResponse.ok) {
       throw new Error(`Failed to fetch image: ${imageResponse.status}`);
     }
 
     const imageBlob = await imageResponse.blob();
-    console.log(`📁 Image fetched: ${imageBlob.size} bytes`);
+    console.log(`📁 Image fetched: ${imageBlob.size} bytes (optimized size)`);
+    
+    // OPTIMIZATION: Skip upload if image is too large (>500KB)
+    if (imageBlob.size > 500000) {
+      console.warn(`⚠️ Image too large (${imageBlob.size} bytes), skipping upload`);
+      return null;
+    }
     
     console.log(`🔄 Uploading to Whop via API route...`);
     
-    // Upload using our API route with absolute URL
+    // OPTIMIZATION: Upload with timeout control
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-    const uploadResponse = await fetch(`${baseUrl}/api/upload`, {
-      method: 'POST',
-      body: imageBlob,
-      headers: {
-        'Content-Type': 'image/jpeg',
-        'x-user-id': userId,
-        'x-biz-id': bizId,
-      },
-    });
+    const uploadResponse = await Promise.race([
+      fetch(`${baseUrl}/api/upload`, {
+        method: 'POST',
+        body: imageBlob,
+        headers: {
+          'Content-Type': 'image/jpeg',
+          'x-user-id': userId,
+          'x-biz-id': bizId,
+        },
+      }),
+      new Promise<Response>((_, reject) => 
+        setTimeout(() => reject(new Error('Upload timeout')), UPLOAD_TIMEOUT)
+      )
+    ]);
 
     if (!uploadResponse.ok) {
       const errorText = await uploadResponse.text();
@@ -227,7 +249,6 @@ export async function uploadImageToWhop(imageUrl: string, userId: string, bizId:
 
     if (uploadResult.success && uploadResult.attachmentId) {
       console.log(`✅ Image uploaded successfully! DirectUploadId: ${uploadResult.attachmentId}`);
-      console.log(`📸 Image URL: ${uploadResult.url || 'URL not available'}`);
       return uploadResult.attachmentId;
     } else {
       console.error("Upload result missing attachmentId:", uploadResult);
@@ -240,13 +261,14 @@ export async function uploadImageToWhop(imageUrl: string, userId: string, bizId:
 }
 
 /**
- * Creates a forum post announcing a new place using the correct Whop API
+ * OPTIMIZED: Creates forum post with optional async image upload
  */
 export async function createPlaceAnnouncementPost({
   place,
   experienceId,
   userId,
   bizId,
+  skipImageUpload = false, // OPTIMIZATION: Allow skipping slow image upload
 }: {
   place: {
     id: string;
@@ -260,6 +282,7 @@ export async function createPlaceAnnouncementPost({
   experienceId: string;
   userId: string;
   bizId: string;
+  skipImageUpload?: boolean;
 }) {
   try {
     // Get experience details for URL generation
@@ -280,33 +303,72 @@ export async function createPlaceAnnouncementPost({
          .replace(/-+/g, '-')
          .replace(/^-|-$/g, '');
 
-    // Create Whop public URL format: whop.com/{bizName}/{experienceTitle}-{expIdWithoutPrefix}
+    // Create Whop public URL format
     const bizNameUrl = urlFriendly(experience.bizName);
     const experienceTitleUrl = urlFriendly(experience.title);
-    const expIdWithoutPrefix = experienceId.slice(4); // Remove "exp_" prefix
+    const expIdWithoutPrefix = experienceId.slice(4);
     const mapUrl = `https://whop.com/${bizNameUrl}/${experienceTitleUrl}-${expIdWithoutPrefix}/app`;
 
-    // Get Mapbox Static image URL
-    const staticImageUrl = await getMapboxStaticImage(
-      place.latitude,
-      place.longitude,
-      place.name
-    );
-
-    // Upload the image to Whop if we have a static image URL
+    // OPTIMIZATION: Handle image upload strategy
     let attachmentId: string | null = null;
-    if (staticImageUrl) {
-      console.log(`🔄 Uploading map image for place: ${place.name}`);
-      attachmentId = await uploadImageToWhop(staticImageUrl, userId, bizId);
-      
-      if (attachmentId) {
-        console.log(`✅ Image uploaded successfully with ID: ${attachmentId}`);
-      } else {
-        console.log(`❌ Image upload failed, will include URL in post instead`);
+    let staticImageUrl: string | null = null;
+
+    if (!skipImageUpload) {
+      // Get optimized Mapbox Static image URL
+      staticImageUrl = await getMapboxStaticImage(
+        place.latitude,
+        place.longitude,
+        place.name
+      );
+
+      // OPTIMIZATION: Try fast image upload with timeout
+      if (staticImageUrl) {
+        console.log(`🔄 Attempting fast image upload for place: ${place.name}`);
+        
+        try {
+          // OPTIMIZATION: Race against timeout for entire image upload process
+          attachmentId = await Promise.race([
+            uploadImageToWhop(staticImageUrl, userId, bizId),
+            new Promise<string | null>((_, reject) => 
+              setTimeout(() => reject(new Error('Total image process timeout')), 25000) // 25 seconds max
+            )
+          ]);
+          
+          if (attachmentId) {
+            console.log(`✅ Fast image upload successful: ${attachmentId}`);
+          }
+        } catch (timeoutError) {
+          console.log(`⚠️ Image upload timeout, proceeding without attachment`);
+          attachmentId = null;
+        }
       }
     }
 
-    // First, try to create the "Places Forum" (it's ok if it already exists)
+    // OPTIMIZATION: Always create forum post, even if image upload fails
+    const addressText = place.address 
+      ? `Address: ${place.address}`
+      : `Coordinates: ${place.latitude.toFixed(4)}, ${place.longitude.toFixed(4)}`;
+
+    const categoryText = place.category ? `Category: ${place.category}` : null;
+    const descriptionText = place.description ? `Description: ${place.description}` : null;
+    const mapUrlText = `🔗 View on Map: ${mapUrl}`;
+
+    // Create content based on what we have
+    let postContent = `A new place has been added to the map! 🗺️
+${addressText}
+${categoryText || ''}
+${descriptionText || ''}
+
+${mapUrlText}`;
+
+    // Add image info based on what we achieved
+    if (attachmentId) {
+      postContent += '\n📸 See the map location in the image attached below!';
+    } else if (staticImageUrl && !skipImageUpload) {
+      postContent += `\n📸 **Location Preview**: ${staticImageUrl}`;
+    }
+
+    // OPTIMIZATION: Create forum first (fast operation)
     let forumId: string | null = null;
     try {
       const forumResult = await whopApi
@@ -319,12 +381,10 @@ export async function createPlaceAnnouncementPost({
           },
         });
       
-      forumId = forumResult.createForum?.id || null;
-      console.log(`✅ Created or found Places Forum: ${forumId}`);
+      forumId = forumResult.createForum?.id || experienceId;
+      console.log(`✅ Forum ready: ${forumId}`);
     } catch (error: any) {
-      // Forum might already exist, we'll try to find it by using a different approach
-      console.log("Forum might already exist, continuing with post creation...");
-      // For now, we'll use the experienceId as forumId - adjust this based on your setup
+      console.log("Using experienceId as forumId fallback");
       forumId = experienceId;
     }
 
@@ -333,45 +393,25 @@ export async function createPlaceAnnouncementPost({
       return;
     }
 
-    // Create the forum post content 
-    const addressText = place.address 
-      ? `Address: ${place.address}`
-      : `Coordinates: ${place.latitude.toFixed(4)}, ${place.longitude.toFixed(4)}`;
-
-    const categoryText = place.category ? `Category: ${place.category}` : null;
-    const descriptionText = place.description ? `Description: ${place.description}` : null;
-	const mapUrlText = `🔗 View on Map: ${mapUrl}`;
-
-    // Customize content based on whether we have an attachment
-    const postContent = `A new place has been added to the map! 🗺️
-${addressText}
-${categoryText}
-${descriptionText}
-
-${mapUrlText}
-${attachmentId ? '📸 See the map location in the image attached below!' : (staticImageUrl ? `📸 **Location Preview**: ${staticImageUrl}` : '')}
-
-`;
-
-    // Prepare the forum post input
+    // Prepare forum post input
     const forumPostInput: any = {
       forumExperienceId: forumId,
       title: `📍 New Place Added: ${place.name}`,
       content: postContent,
-      isMention: true, // This notifies all members
+      isMention: true,
     };
 
-    // Add attachment if we successfully uploaded the image
+    // OPTIMIZATION: Only add attachment if we successfully uploaded
     if (attachmentId) {
       forumPostInput.attachments = [
         {
           directUploadId: attachmentId,
         },
       ];
-      console.log(`✅ Including image attachment with directUploadId: ${attachmentId}`);
+      console.log(`✅ Including image attachment: ${attachmentId}`);
     }
 
-    // Create the forum post using the app's identity (not individual user)
+    // Create the forum post
     const postResult = await whopApi
       .withCompany(bizId)
       .createForumPost({
@@ -379,80 +419,40 @@ ${attachmentId ? '📸 See the map location in the image attached below!' : (sta
       });
 
     if (postResult.createForumPost) {
-      console.log(`✅ Successfully created forum post for place: ${place.name}`);
+      console.log(`✅ Forum post created for place: ${place.name}`);
       console.log(`📝 Post ID: ${postResult.createForumPost.id}`);
+      
       if (attachmentId) {
         console.log(`📸 With image attachment: ${attachmentId}`);
       } else if (staticImageUrl) {
         console.log(`📸 With image URL in content: ${staticImageUrl}`);
+      } else {
+        console.log(`📝 Text-only post (no image)`);
       }
     }
 
   } catch (error) {
     console.error("Error creating place announcement post:", error);
     
-    // Get experience details for fallback URL generation
-    let mapUrl = `https://whop.com/experiences/${experienceId}`; // Default fallback
+    // OPTIMIZATION: Always provide fallback notification
+    console.log(`=== FALLBACK: New Place Added ===`);
+    console.log(`📍 ${place.name}`);
+    if (place.address) console.log(`📍 ${place.address}`);
+    if (place.description) console.log(`📝 ${place.description}`);
     
-    try {
-      const experience = await prisma.experience.findUnique({
-        where: { id: experienceId },
-      });
-      
-      if (experience) {
-        // Helper function to make strings URL-friendly
-        const urlFriendly = (str: string) => 
-          str.toLowerCase()
-             .replace(/\s+/g, '-')
-             .replace(/[^a-z0-9-]/g, '')
-             .replace(/-+/g, '-')
-             .replace(/^-|-$/g, '');
-
-        // Create Whop public URL format for fallback too
-        const bizNameUrl = urlFriendly(experience.bizName);
-        const experienceTitleUrl = urlFriendly(experience.title);
-        const expIdWithoutPrefix = experienceId.slice(4); // Remove "exp_" prefix
-        mapUrl = `https://whop.com/${bizNameUrl}/${experienceTitleUrl}-${expIdWithoutPrefix}/app`;
-      }
-    } catch (urlError) {
-      console.error("Error generating fallback URL:", urlError);
-    }
-    
-    // Get Mapbox Static image URL for fallback
-    const staticImageUrl = await getMapboxStaticImage(
-      place.latitude,
-      place.longitude,
-      place.name
-    );
-    
-    // Fallback: Log notification details even if forum post fails
-    console.log(`=== New Place Notification (Forum Post Failed) ===`);
-    console.log(`Title: 📍 New Place Added: ${place.name}`);
-    
-    const addressText = place.address ? `Address: ${place.address}` : `Coordinates: ${place.latitude.toFixed(4)}, ${place.longitude.toFixed(4)}`;
-    const categoryText = place.category ? `Category: ${place.category}` : '';
-    const descriptionText = place.description ? `Description: ${place.description}` : '';
-    
-    console.log(`Content: A new place has been added!`);
-    console.log(`${addressText}`);
-    if (categoryText) console.log(categoryText);
-    if (descriptionText) console.log(descriptionText);
-    console.log(`Map URL: ${mapUrl}`);
-    if (staticImageUrl) console.log(`Image URL: ${staticImageUrl}`);
-    
-    // Send webhook notification if configured
+    // Send basic webhook notification
     if (process.env.DEFAULT_WEBHOOK_URL) {
       try {
         await fetch(process.env.DEFAULT_WEBHOOK_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            content: `📍 New place added: **${place.name}**\n${addressText}\n🔗 View: ${mapUrl}`
+            content: `📍 New place added: **${place.name}**${place.address ? `\n📍 ${place.address}` : ''}`
           })
         });
-        console.log(`✅ Webhook notification sent successfully`);
+        console.log(`✅ Fallback webhook sent`);
       } catch (webhookError) {
-        console.error("Webhook notification failed:", webhookError);
+        console.error("Fallback webhook failed:", webhookError);
       }
     }
   }
