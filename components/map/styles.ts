@@ -28,12 +28,18 @@ export const mapStyles = `
     border: 1px solid rgba(255, 255, 255, 0.1) !important;
     z-index: 999 !important;
     pointer-events: auto !important;
+    transform: none !important;
+    transition: none !important;
+    animation: none !important;
   }
   .place-popup .mapboxgl-popup-content {
     background: transparent !important;
     padding: 0 !important;
     border-radius: 12px !important;
     pointer-events: auto !important;
+    transform: none !important;
+    transition: none !important;
+    animation: none !important;
   }
   .place-popup .mapboxgl-popup-tip {
     display: none !important;
@@ -84,8 +90,13 @@ export const mapStyles = `
   .delete-btn:hover {
     background: #b91c1c;
   }
-  .mapboxgl-marker {
-    z-index: 10 !important;
+  .custom-marker {
+    width: 24px;
+    height: 30px;
+    cursor: pointer;
+  }
+  .custom-marker:hover {
+    opacity: 0.8;
   }
 `;
 
@@ -160,4 +171,4 @@ export const controlPanelStyles = `
     gap: 6px !important;
     margin-top: 6px !important;
   }
-`; 
+`;

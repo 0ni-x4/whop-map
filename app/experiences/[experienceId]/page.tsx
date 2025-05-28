@@ -35,7 +35,7 @@ export default async function ExperiencePage({ params }: PageProps) {
         <p className="text-xs text-gray-600">
           {hasAccess.hasAccessToExperience.accessLevel === "admin" 
             ? "Admin access"
-            : "View only"}
+            : "View Places"}
         </p>
       </div>
 

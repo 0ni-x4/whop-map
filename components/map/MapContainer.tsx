@@ -21,21 +21,13 @@ interface MapContainerProps {
 // Create proper SVG pin marker
 const createPinMarker = (color = '#dc2626') => {
   const markerEl = document.createElement('div');
+  markerEl.className = 'custom-marker';
   markerEl.innerHTML = `
     <svg width="24" height="30" viewBox="0 0 24 30" fill="none" xmlns="http://www.w3.org/2000/svg">
       <path d="M12 0C5.372 0 0 5.372 0 12C0 18.628 12 30 12 30S24 18.628 24 12C24 5.372 18.628 0 12 0Z" fill="${color}"/>
       <circle cx="12" cy="12" r="4" fill="white"/>
     </svg>
   `;
-  markerEl.style.cursor = 'pointer';
-  markerEl.style.width = '24px';
-  markerEl.style.height = '30px';
-  markerEl.style.display = 'block';
-  markerEl.style.border = 'none';
-  markerEl.style.borderRadius = '0';
-  markerEl.style.padding = '0';
-  markerEl.style.transition = 'transform 0.2s ease';
-  markerEl.style.transformOrigin = 'center bottom';
   return markerEl;
 };
 
@@ -92,15 +84,6 @@ export default function MapContainer({
           resizeObserver.observe(mapContainer.current);
         }
 
-        // Create popup
-        const popup = new mapboxgl.Popup({
-          closeButton: false,
-          closeOnClick: false,
-          className: 'place-popup',
-          offset: [0, -35], // Offset above the pin (pin is 30px tall + 5px spacing)
-          anchor: 'bottom' // Anchor popup to bottom so it appears above the pin
-        });
-
         mapInstance.on('load', () => {
           // Set atmosphere styling
           mapInstance.setFog({
@@ -116,76 +99,32 @@ export default function MapContainer({
             // Create proper pin marker
             const markerEl = createPinMarker('#dc2626');
             
-            // Add marker to map with proper anchor
+            // Create popup following Mapbox demo pattern
+            const popup = new mapboxgl.Popup({ offset: 25 })
+              .setHTML(`
+                <div class="place-info">
+                  <h3>${place.name}</h3>
+                  ${place.description ? `<p class="place-description">${place.description}</p>` : ''}
+                  ${place.category ? `<p class="place-category">${place.category}</p>` : ''}
+                  ${place.address ? `<p class="place-location">${place.address}</p>` : ''}
+                  ${accessLevel === "admin" ? `
+                    <button onclick="window.deletePlace('${place.id}')" class="delete-btn">
+                      Delete Place
+                    </button>
+                  ` : ''}
+                </div>
+              `);
+            
+            // Add marker with popup using Mapbox demo pattern
             const marker = new mapboxgl.Marker({ 
               element: markerEl,
-              anchor: 'bottom' // Important: anchor to bottom of pin
+              anchor: 'bottom'
             })
               .setLngLat([place.longitude, place.latitude])
+              .setPopup(popup)
               .addTo(mapInstance);
 
             markersRef.current.push(marker);
-
-            // Stable hover events
-            let isHovered = false;
-            
-            markerEl.addEventListener('mouseenter', () => {
-              isHovered = true;
-              markerEl.style.transform = 'scale(1.1)';
-              
-              // Remove any existing popup first
-              popup.remove();
-              
-              popup.setLngLat([place.longitude, place.latitude])
-                .setHTML(`
-                  <div class="place-info">
-                    <h3>${place.name}</h3>
-                    ${place.description ? `<p class="place-description">${place.description}</p>` : ''}
-                    ${place.category ? `<p class="place-category">${place.category}</p>` : ''}
-                    ${place.address ? `<p class="place-location">${place.address}</p>` : ''}
-                    ${accessLevel === "admin" ? `
-                      <button onclick="window.deletePlace('${place.id}')" class="delete-btn">
-                        Delete Place
-                      </button>
-                    ` : ''}
-                  </div>
-                `)
-                .addTo(mapInstance);
-            });
-
-            markerEl.addEventListener('mouseleave', () => {
-              isHovered = false;
-              setTimeout(() => {
-                if (!isHovered) {
-                  markerEl.style.transform = 'scale(1)';
-                  popup.remove();
-                }
-              }, 100);
-            });
-
-            // Click event for persistent popup
-            markerEl.addEventListener('click', (e) => {
-              e.stopPropagation();
-              
-              // Remove any existing popup first
-              popup.remove();
-              
-              popup.setLngLat([place.longitude, place.latitude])
-                .setHTML(`
-                  <div class="place-info">
-                    <h3>${place.name}</h3>
-                    ${place.description ? `<p class="place-description">${place.description}</p>` : ''}
-                    ${place.category ? `<p class="place-category">${place.category}</p>` : ''}
-                    ${place.address ? `<p class="place-location">${place.address}</p>` : ''}
-                    ${accessLevel === "admin" ? `
-                      <button onclick="window.deletePlace('${place.id}')" class="delete-btn">
-                        Delete Place
-                      </button>
-                    ` : ''}
-                  </div>
-                `)
-                .addTo(mapInstance);
-            });
           });
 
           // Map click handler for adding places
@@ -285,8 +224,7 @@ export default function MapContainer({
           bottom: 0,
           left: 0,
           right: 0,
-          background: 'rgb(12, 12, 35)',
-          transition: 'width 0.3s ease, left 0.3s ease'
+          background: 'rgb(12, 12, 35)'
         }} 
       />
     </>
