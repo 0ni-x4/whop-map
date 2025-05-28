@@ -27,8 +27,8 @@ importers:
         specifier: 0.0.1-canary.111
         version: 0.0.1-canary.111(react@19.1.0)
       '@whop/api':
-        specifier: ^0.0.17
-        version: 0.0.17
+        specifier: ^0.0.21-canary.1
+        version: 0.0.21-canary.6
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -1939,8 +1939,8 @@ packages:
   '@whop-apps/typed-transport@0.0.1-canary.111':
     resolution: {integrity: sha512-jvs9C11P4VGhNgREk4JDnFGSBeSw+GS2ORvnZJgS0o2AxBevB8nAKPElRArEEYrPFmNasoi5t0KcF5EkEoJ+wA==}
 
-  '@whop/api@0.0.17':
-    resolution: {integrity: sha512-Ky6TxPqWiWcVng043cjCyaBBuwUv/gDS7Z4a8Sg/OnR2mffEON9KTBC6rwbb4zndjOUhYASUVuin9VRgwyKeKg==}
+  '@whop/api@0.0.21-canary.6':
+    resolution: {integrity: sha512-i7i3bsI251oEJMF9EkEJfDZAQM79iHjzLNxh2tdMKt0w8a+XHDVH+64JflGBYP3tHLlxg2H/BWtW4yMCj27Xig==}
     engines: {node: 22.x, pnpm: 9.15.9}
 
   abort-controller@3.0.0:
@@ -2239,8 +2239,8 @@ packages:
     peerDependencies:
       graphql: ^0.9.0 || ^0.10.0 || ^0.11.0 || ^0.12.0 || ^0.13.0 || ^14.0.0 || ^15.0.0 || ^16.0.0
 
-  graphql@16.8.1:
-    resolution: {integrity: sha512-59LZHPdGZVh695Ud9lRzPBVTtlX9ZCV150Er2W43ro37wVof0ctenSaskPPjN7lVTIN8mSZt8PHUNKZuNQUuxw==}
+  graphql@16.11.0:
+    resolution: {integrity: sha512-mS1lbMsxgQj6hge1XZ6p7GPhbrtFwUFYi3wRzXAC/FmYnyXMTvvI3td3rjmQ2u8ewXueaSvRPWaEcgVVOT9Jnw==}
     engines: {node: ^12.22.0 || ^14.16.0 || ^16.0.0 || >=17.0.0}
 
   grid-index@1.1.0:
@@ -2832,6 +2832,9 @@ packages:
     resolution: {integrity: sha512-5S7Va8hKfV7W5U6g3aYxXmlPoZVAwUMy9AOKyF2fVuZa2UD3qZjg578OrLRt8PcNN1PleVaL/5/yYATNL0ICUw==}
     engines: {node: '>=18'}
 
+  tiny-typed-emitter@2.1.0:
+    resolution: {integrity: sha512-qVtvMxeXbVej0cQWKqVSSAHmKZEHAvxdF8HEUBFWts8h+xEo5m/lEiPakuyZ3BnCBjOD8i24kzNOiOLLgsSxhA==}
+
   tinyqueue@1.2.3:
     resolution: {integrity: sha512-Qz9RgWuO9l8lT+Y9xvbzhPT2efIUIFd69N7eF7tJ9lnQl0iLj1M7peK7IoUGZL9DJHw9XftqLreccfxcQgYLxA==}
 
@@ -3032,9 +3035,9 @@ snapshots:
 
   '@frosted-ui/colors@0.0.1-canary.61': {}
 
-  '@graphql-typed-document-node/core@3.2.0(graphql@16.8.1)':
+  '@graphql-typed-document-node/core@3.2.0(graphql@16.11.0)':
     dependencies:
-      graphql: 16.8.1
+      graphql: 16.11.0
 
   '@img/sharp-darwin-arm64@0.34.2':
     optionalDependencies:
@@ -5232,13 +5235,14 @@ snapshots:
     dependencies:
       zod: 3.25.32
 
-  '@whop/api@0.0.17':
+  '@whop/api@0.0.21-canary.6':
     dependencies:
-      graphql: 16.8.1
-      graphql-request: 7.2.0(graphql@16.8.1)
-      graphql-tag: 2.12.6(graphql@16.8.1)
+      graphql: 16.11.0
+      graphql-request: 7.2.0(graphql@16.11.0)
+      graphql-tag: 2.12.6(graphql@16.11.0)
       jose: 6.0.11
       js-md5: 0.8.3
+      tiny-typed-emitter: 2.1.0
 
   abort-controller@3.0.0:
     dependencies:
@@ -5521,17 +5525,17 @@ snapshots:
 
   graceful-fs@4.2.11: {}
 
-  graphql-request@7.2.0(graphql@16.8.1):
+  graphql-request@7.2.0(graphql@16.11.0):
     dependencies:
-      '@graphql-typed-document-node/core': 3.2.0(graphql@16.8.1)
-      graphql: 16.8.1
+      '@graphql-typed-document-node/core': 3.2.0(graphql@16.11.0)
+      graphql: 16.11.0
 
-  graphql-tag@2.12.6(graphql@16.8.1):
+  graphql-tag@2.12.6(graphql@16.11.0):
     dependencies:
-      graphql: 16.8.1
+      graphql: 16.11.0
       tslib: 2.8.1
 
-  graphql@16.8.1: {}
+  graphql@16.11.0: {}
 
   grid-index@1.1.0: {}
 
@@ -6235,6 +6239,8 @@ snapshots:
       minizlib: 3.0.2
       mkdirp: 3.0.1
       yallist: 5.0.0
+
+  tiny-typed-emitter@2.1.0: {}
 
   tinyqueue@1.2.3: {}
 

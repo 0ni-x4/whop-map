@@ -149,6 +149,7 @@ export const controlPanelStyles = `
     font-size: 11px !important;
     margin-bottom: 6px !important;
     background: white !important;
+    color: #1a1a1a !important;
     box-sizing: border-box !important;
   }
   .control-input::placeholder {

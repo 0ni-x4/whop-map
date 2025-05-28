@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { verifyUserToken, whopApi } from "@/lib/whop-api";
 import { headers } from "next/headers";
-import { createPlace, getPlaces } from "@/lib/helpers";
+import { createPlace, getPlaces, createPlaceAnnouncementPost } from "@/lib/helpers";
 
 export async function GET(request: Request) {
   try {
@@ -22,7 +22,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const hasAccess = await whopApi.CheckIfUserHasAccessToExperience({
+    const hasAccess = await whopApi.checkIfUserHasAccessToExperience({
       userId: userToken.userId,
       experienceId,
     });
@@ -64,7 +64,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const hasAccess = await whopApi.CheckIfUserHasAccessToExperience({
+    const hasAccess = await whopApi.checkIfUserHasAccessToExperience({
       userId: userToken.userId,
       experienceId,
     });
@@ -94,6 +94,21 @@ export async function POST(request: Request) {
       longitude,
       address,
       category,
+    });
+
+    // Get business information for forum post
+    const experience = await whopApi.getExperience({ experienceId });
+    const bizId = experience.experience.company.id;
+
+    // Create forum post announcement (async, don't wait for completion)
+    createPlaceAnnouncementPost({
+      place,
+      experienceId,
+      userId: userToken.userId,
+      bizId,
+    }).catch(error => {
+      console.error("Failed to create forum post:", error);
+      // Don't fail the API call if forum post fails
     });
 
     return NextResponse.json(place);

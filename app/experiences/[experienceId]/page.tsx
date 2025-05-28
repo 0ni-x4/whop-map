@@ -18,7 +18,7 @@ export default async function ExperiencePage({ params }: PageProps) {
 
   const experience = await findOrCreateExperience(experienceId);
 
-  const hasAccess = await whopApi.CheckIfUserHasAccessToExperience({
+  const hasAccess = await whopApi.checkIfUserHasAccessToExperience({
     userId: userToken.userId,
     experienceId: experienceId,
   });

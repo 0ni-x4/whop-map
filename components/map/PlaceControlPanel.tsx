@@ -29,6 +29,9 @@ export default function PlaceControlPanel({
   const [newPlaceCategory, setNewPlaceCategory] = useState("");
   const [newPlaceAddress, setNewPlaceAddress] = useState("");
   const [isGeocoding, setIsGeocoding] = useState(false);
+  const [isAddingPlaceLoading, setIsAddingPlaceLoading] = useState(false);
+  const [showNameError, setShowNameError] = useState(false);
+  const [showPositionError, setShowPositionError] = useState(false);
 
   const handleAddressGeocode = async () => {
     if (!newPlaceAddress.trim() || !map) return;
@@ -50,7 +53,19 @@ export default function PlaceControlPanel({
   };
 
   const handleAddPlace = async () => {
-    if (!newPlacePosition || !newPlaceName.trim()) return;
+    if (!newPlacePosition || !newPlaceName.trim()) {
+      if (!newPlaceName.trim()) {
+        setShowNameError(true);
+      }
+      if (!newPlacePosition) {
+        setShowPositionError(true);
+      }
+      return;
+    }
+
+    setShowNameError(false);
+    setShowPositionError(false);
+    setIsAddingPlaceLoading(true);
 
     const newPlace = {
       name: newPlaceName,
@@ -71,16 +86,21 @@ export default function PlaceControlPanel({
       });
 
       if (!response.ok) {
-        throw new Error("Failed to add place");
+        const errorText = await response.text();
+        throw new Error(`Failed to add place: ${response.status} ${errorText}`);
       }
 
+      const result = await response.json();
+      
       // Reset form
       resetForm();
       
       // Refresh the page to show the new place
       window.location.reload();
     } catch (error) {
-      console.error("Error adding place:", error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      alert(`Error adding place: ${errorMessage}`);
+      setIsAddingPlaceLoading(false);
     }
   };
 
@@ -91,6 +111,9 @@ export default function PlaceControlPanel({
     setNewPlaceAddress("");
     setNewPlacePosition(null);
     setIsAddingPlace(false);
+    setIsAddingPlaceLoading(false);
+    setShowNameError(false);
+    setShowPositionError(false);
   };
 
   return (
@@ -113,9 +136,34 @@ export default function PlaceControlPanel({
               type="text"
               placeholder="Place name *"
               value={newPlaceName}
-              onChange={(e) => setNewPlaceName(e.target.value)}
+              onChange={(e) => {
+                setNewPlaceName(e.target.value);
+                if (showNameError && e.target.value.trim()) {
+                  setShowNameError(false);
+                }
+              }}
               className="control-input"
+              style={{
+                borderColor: showNameError ? '#dc2626' : undefined,
+                borderWidth: showNameError ? '2px' : undefined
+              }}
             />
+            
+            {showNameError && (
+              <div style={{ 
+                fontSize: '11px', 
+                color: '#dc2626', 
+                marginTop: '-4px', 
+                marginBottom: '8px',
+                fontWeight: '600',
+                backgroundColor: '#fef2f2',
+                border: '1px solid #fecaca',
+                borderRadius: '4px',
+                padding: '6px 8px'
+              }}>
+                ⚠️ Place name is required
+              </div>
+            )}
             
             <input
               type="text"
@@ -150,45 +198,45 @@ export default function PlaceControlPanel({
               {isGeocoding ? 'Searching...' : 'Find Address'}
             </button>
             
+            {!newPlacePosition && showPositionError && (
+              <div style={{ 
+                fontSize: '11px', 
+                color: '#dc2626', 
+                marginBottom: '8px',
+                fontWeight: '600',
+                backgroundColor: '#fef2f2',
+                border: '1px solid #fecaca',
+                borderRadius: '4px',
+                padding: '6px 8px'
+              }}>
+                ⚠️ Click on the map or use "Find Address" to set location
+              </div>
+            )}
+
             {newPlacePosition && (
               <div className="control-status">
                 ✓ Position: {newPlacePosition.lat.toFixed(4)}, {newPlacePosition.lng.toFixed(4)}
               </div>
             )}
 
-            {newPlacePosition && (
-              <div className="control-actions">
-                <button 
-                  onClick={handleAddPlace} 
-                  disabled={!newPlaceName.trim()}
-                  className="control-button"
-                  style={{ 
-                    background: '#10b981 !important', 
-                    color: 'white !important', 
-                    flex: '2', 
-                    marginBottom: 0,
-                    fontWeight: '600',
-                    fontSize: '13px'
-                  }}
-                >
-                  ✓ Add
-                </button>
-                <button
-                  onClick={resetForm}
-                  className="control-button"
-                  style={{ 
-                    background: '#dc2626 !important', 
-                    color: 'white !important', 
-                    flex: '1', 
-                    padding: '8px', 
-                    marginBottom: 0,
-                    fontSize: '12px'
-                  }}
-                >
-                  ✕
-                </button>
-              </div>
-            )}
+            <div className="control-actions">
+              <button 
+                onClick={handleAddPlace} 
+                disabled={isAddingPlaceLoading}
+                className="control-button"
+                style={{ 
+                  background: '#10b981 !important', 
+                  color: 'white !important', 
+                  width: '100%',
+                  marginBottom: 0,
+                  fontWeight: '600',
+                  fontSize: '13px',
+                  opacity: isAddingPlaceLoading ? '0.7' : '1'
+                }}
+              >
+                {isAddingPlaceLoading ? '⏳ Adding...' : '✓ Add'}
+              </button>
+            </div>
           </>
         )}
       </div>

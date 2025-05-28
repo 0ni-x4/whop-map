@@ -16,7 +16,7 @@
 		"@types/mapbox-gl": "^3.4.1",
 		"@vercel/functions": "^2.0.3",
 		"@whop-apps/sdk": "0.0.1-canary.111",
-		"@whop/api": "^0.0.17",
+		"@whop/api": "^0.0.21-canary.1",
 		"class-variance-authority": "^0.7.1",
 		"clsx": "^2.1.1",
 		"frosted-ui": "0.0.1-canary.73",
