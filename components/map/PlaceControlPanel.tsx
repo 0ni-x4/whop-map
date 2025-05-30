@@ -76,6 +76,10 @@ export default function PlaceControlPanel({
     }
   };
 
+  /**
+   * CLIENT-SIDE PLACE CREATION with image upload
+   * This handles the entire flow on the client side for better performance
+   */
   const handleAddPlace = async () => {
     if (!newPlacePosition || !newPlaceName.trim()) return;
 
@@ -94,19 +98,22 @@ export default function PlaceControlPanel({
         newPlacePosition.lng
       );
       
+      console.log(`🗺️ Generated Mapbox URL: ${staticImageUrl}`);
+      
       if (staticImageUrl) {
         try {
+          console.log(`🔄 Starting uploadImageFromClient...`);
           attachmentId = await uploadImageFromClient(staticImageUrl, experienceId);
           const imageDuration = Date.now() - imageStart;
           
           if (attachmentId) {
             console.log(`✅ Step 1 completed in ${imageDuration}ms - Image uploaded: ${attachmentId}`);
           } else {
-            console.log(`⚠️ Step 1 completed in ${imageDuration}ms - Image upload failed, proceeding without image`);
+            console.log(`⚠️ Step 1 completed in ${imageDuration}ms - Image upload returned null`);
           }
         } catch (error) {
           const imageDuration = Date.now() - imageStart;
-          console.log(`⚠️ Step 1 failed in ${imageDuration}ms - Image upload error, proceeding without image:`, error);
+          console.error(`❌ Step 1 failed in ${imageDuration}ms - Image upload error:`, error);
         }
       } else {
         console.log(`⚠️ Step 1 skipped - No Mapbox token or URL generation failed`);
@@ -114,6 +121,7 @@ export default function PlaceControlPanel({
 
       // Step 2: Create place with optional attachment ID
       console.log(`🏗️ Step 2: Creating place record...`);
+      console.log(`📎 Attachment ID to send: ${attachmentId || 'None'}`);
       const placeStart = Date.now();
 
       const newPlace = {
@@ -126,6 +134,8 @@ export default function PlaceControlPanel({
         attachmentId: attachmentId, // Pass the pre-uploaded image
       };
 
+      console.log(`📤 Sending place data:`, newPlace);
+
       const response = await fetch(`/api/experiences/${experienceId}/places`, {
         method: "POST",
         headers: {
@@ -135,12 +145,15 @@ export default function PlaceControlPanel({
       });
 
       if (!response.ok) {
-        throw new Error("Failed to add place");
+        const errorText = await response.text();
+        console.error(`❌ Place creation failed: ${response.status} - ${errorText}`);
+        throw new Error(`Failed to add place: ${response.status}`);
       }
 
       const result = await response.json();
       const placeDuration = Date.now() - placeStart;
       console.log(`✅ Step 2 completed in ${placeDuration}ms - Place created: ${result.id}`);
+      console.log(`📄 Server response:`, result);
 
       console.log(`🎯 === CLIENT-SIDE PLACE CREATION COMPLETE ===`);
       

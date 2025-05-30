@@ -30,36 +30,53 @@ export const maxDuration = 30;
 export async function POST(request: Request) {
   const startTime = Date.now();
   
+  console.log(`🖥️ === CLIENT IMAGE UPLOAD API START ===`);
+  console.log(`🔗 Request URL: ${request.url}`);
+  console.log(`📊 Request headers:`, Object.fromEntries(request.headers.entries()));
+  
   try {
     // Extract experience ID from URL
     const url = new URL(request.url);
     const match = url.pathname.match(/experiences\/([^/]+)\/upload-image/);
     const experienceId = match ? match[1] : null;
 
+    console.log(`🔍 URL pathname: ${url.pathname}`);
+    console.log(`🔍 Regex match result:`, match);
+    console.log(`📍 Extracted experience ID: ${experienceId}`);
+
     if (!experienceId) {
+      console.error(`❌ Missing experienceId - URL: ${request.url}`);
       return NextResponse.json(
         { error: "Missing experienceId" },
         { status: 400 }
       );
     }
 
-    console.log(`🖥️ === CLIENT IMAGE UPLOAD API START ===`);
     console.log(`📍 Experience: ${experienceId}`);
 
     // Verify user authentication
     const headersList = await headers();
+    console.log(`🔐 Verifying user token...`);
     const userToken = await verifyUserToken(headersList);
+    
     if (!userToken) {
+      console.error(`❌ No user token found`);
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    console.log(`👤 User authenticated: ${userToken.userId}`);
+
     // Check if user has access to this experience
+    console.log(`🔍 Checking user access to experience...`);
     const hasAccess = await whopApi.checkIfUserHasAccessToExperience({
       userId: userToken.userId,
       experienceId,
     });
 
+    console.log(`📊 Access check result:`, hasAccess.hasAccessToExperience);
+
     if (!hasAccess.hasAccessToExperience.hasAccess) {
+      console.error(`❌ User has no access to experience`);
       return NextResponse.json(
         { error: "Unauthorized, no access" },
         { status: 401 }
@@ -67,13 +84,17 @@ export async function POST(request: Request) {
     }
 
     if (hasAccess.hasAccessToExperience.accessLevel !== "admin") {
+      console.error(`❌ User is not admin: ${hasAccess.hasAccessToExperience.accessLevel}`);
       return NextResponse.json(
         { error: "Unauthorized, admin access required" },
         { status: 401 }
       );
     }
 
+    console.log(`✅ User has admin access`);
+
     // Get experience data for bizId
+    console.log(`🔍 Getting experience data for bizId...`);
     const experienceData = await whopApi.getExperience({ experienceId });
     const bizId = experienceData.experience.company.id;
 
@@ -93,7 +114,7 @@ export async function POST(request: Request) {
     
     if (imageData.byteLength > 2 * 1024 * 1024) {
       const step2Duration = Date.now() - step2Start;
-      console.error(`❌ Step 2 failed in ${step2Duration}ms - File too large`);
+      console.error(`❌ Step 2 failed in ${step2Duration}ms - File too large: ${imageData.byteLength} bytes`);
       return NextResponse.json(
         { 
           error: 'File too large. Maximum size is 2MB.',
@@ -115,11 +136,11 @@ export async function POST(request: Request) {
     const file = new File([blob], 'place-image.jpg', { type: 'image/jpeg' });
     
     const step3Duration = Date.now() - step3Start;
-    console.log(`✅ Step 3 completed in ${step3Duration}ms - File created`);
+    console.log(`✅ Step 3 completed in ${step3Duration}ms - File created: ${file.name}, size: ${file.size}`);
 
     // Step 4: Upload directly to Whop
     const step4Start = Date.now();
-    console.log(`⬆️ Step 4: Uploading to Whop...`);
+    console.log(`⬆️ Step 4: Uploading to Whop via SDK...`);
     
     const result = await whopApi
       .withUser(userToken.userId)
@@ -131,6 +152,9 @@ export async function POST(request: Request) {
 
     const step4Duration = Date.now() - step4Start;
     const totalDuration = Date.now() - startTime;
+
+    console.log(`📄 Whop SDK result:`, result);
+    console.log(`📊 Result type: ${typeof result}, Is object: ${typeof result === 'object'}`);
 
     if (result && typeof result === 'object' && 'directUploadId' in result && result.directUploadId) {
       console.log(`✅ Step 4 completed in ${step4Duration}ms - Upload successful!`);
@@ -157,12 +181,16 @@ export async function POST(request: Request) {
     } else {
       console.error(`❌ Step 4 completed in ${step4Duration}ms - No directUploadId returned`);
       console.error(`❌ Result:`, result);
+      console.error(`❌ Has directUploadId: ${'directUploadId' in (result || {})}`);
       throw new Error('No directUploadId returned from upload');
     }
 
   } catch (error) {
     const totalDuration = Date.now() - startTime;
     console.error(`❌ Client image upload failed after ${totalDuration}ms:`, error);
+    console.error(`❌ Error type: ${error instanceof Error ? error.constructor.name : typeof error}`);
+    console.error(`❌ Error message: ${error instanceof Error ? error.message : String(error)}`);
+    console.error(`❌ Error stack:`, error instanceof Error ? error.stack : 'No stack trace');
 
     return NextResponse.json(
       { 
