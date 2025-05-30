@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { verifyUserToken, whopApi } from "@/lib/whop-api";
 import { headers } from "next/headers";
-import { createPlace, getPlaces, createPlaceAnnouncementPost } from "@/lib/helpers";
+import { createPlace, getPlaces, createPlaceAnnouncementPostWithAttachment } from "@/lib/helpers";
 import { withAdvancedTimeout } from "@/lib/timeout-simulator";
 
 // OPTIMIZATION: Set timeout for Vercel
@@ -60,10 +60,10 @@ export async function GET(request: Request) {
 
 /**
  * OPTIMIZED: POST /api/experiences/[experienceId]/places
- * Creates a new place with async forum post creation
- * Only available to admin users
+ * Creates a new place with optional pre-uploaded attachment from client
+ * Much faster than server-side image processing
  * 
- * NOW WITH VERCEL TIMEOUT SIMULATION
+ * NOW WITH CLIENT-SIDE IMAGE UPLOAD SUPPORT
  */
 async function postHandler(request: Request): Promise<NextResponse> {
   const startTime = Date.now();
@@ -109,7 +109,7 @@ async function postHandler(request: Request): Promise<NextResponse> {
     }
 
     // Parse request body
-    const { name, description, latitude, longitude, address, category } =
+    const { name, description, latitude, longitude, address, category, attachmentId } =
       await request.json();
 
     // Validate required fields
@@ -121,6 +121,7 @@ async function postHandler(request: Request): Promise<NextResponse> {
     }
 
     console.log(`🔄 Creating place: ${name}`);
+    console.log(`📎 Pre-uploaded attachment: ${attachmentId ? attachmentId.substring(0, 20) + '...' : 'None'}`);
 
     // OPTIMIZATION: Create the place first (fast operation)
     const place = await createPlace({
@@ -141,28 +142,31 @@ async function postHandler(request: Request): Promise<NextResponse> {
       const experienceData = await whopApi.getExperience({ experienceId });
       const bizId = experienceData.experience.company.id;
       
-      // Fire and forget forum post creation (don't await)
+      // Fire and forget forum post creation with pre-uploaded attachment
       setImmediate(() => {
-        createPlaceAnnouncementPost({
-          place,
-          experienceId,
-          userId: userToken.userId,
-          bizId,
-          skipImageUpload: false, // Try images but with aggressive timeouts
-        }).catch(error => {
-          console.error("Background forum post creation failed:", error);
-          
-          // FALLBACK: Create text-only post if image upload fails
-          createPlaceAnnouncementPost({
+        if (attachmentId) {
+          console.log(`🚀 Creating forum post with pre-uploaded attachment: ${attachmentId}`);
+          createPlaceAnnouncementPostWithAttachment({
             place,
             experienceId,
             userId: userToken.userId,
             bizId,
-            skipImageUpload: true, // Skip images on retry
-          }).catch(retryError => {
-            console.error("Fallback forum post creation also failed:", retryError);
+            attachmentId, // Use the pre-uploaded attachment
+          }).catch((error: any) => {
+            console.error("Background forum post creation with attachment failed:", error);
           });
-        });
+        } else {
+          console.log(`🚀 Creating forum post without attachment (client-side upload failed)`);
+          createPlaceAnnouncementPostWithAttachment({
+            place,
+            experienceId,
+            userId: userToken.userId,
+            bizId,
+            attachmentId: null, // No attachment
+          }).catch((error: any) => {
+            console.error("Background forum post creation failed:", error);
+          });
+        }
       });
       
       console.log(`🔄 Forum post creation started in background`);
@@ -175,7 +179,8 @@ async function postHandler(request: Request): Promise<NextResponse> {
       ...place,
       meta: {
         createdIn: duration,
-        forumPostQueued: true
+        forumPostQueued: true,
+        hasAttachment: !!attachmentId
       }
     });
 

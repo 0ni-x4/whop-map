@@ -605,3 +605,217 @@ ${mapUrlText}`;
     }
   }
 }
+
+/**
+ * OPTIMIZED: Creates forum post with optional pre-uploaded attachment
+ * This version accepts an attachment that was already uploaded from the client
+ */
+export async function createPlaceAnnouncementPostWithAttachment({
+  place,
+  experienceId,
+  userId,
+  bizId,
+  attachmentId = null, // Pre-uploaded attachment ID from client
+}: {
+  place: {
+    id: string;
+    name: string;
+    address?: string | null;
+    description?: string | null;
+    latitude: number;
+    longitude: number;
+    category?: string | null;
+  };
+  experienceId: string;
+  userId: string;
+  bizId: string;
+  attachmentId?: string | null;
+}) {
+  const totalStartTime = Date.now();
+  console.log(`🚀 === FORUM POST CREATION START for "${place.name}" (with attachment: ${!!attachmentId}) ===`);
+  
+  try {
+    // Step 1: Get experience details
+    const step1Start = Date.now();
+    console.log(`📋 Step 1: Getting experience details...`);
+    
+    const experience = await prisma.experience.findUnique({
+      where: { id: experienceId },
+    });
+
+    if (!experience) {
+      console.error("❌ Experience not found for URL generation");
+      return;
+    }
+    
+    const step1Duration = Date.now() - step1Start;
+    console.log(`✅ Step 1 completed in ${step1Duration}ms - Experience: ${experience.title}`);
+
+    // Step 2: Generate URL
+    const step2Start = Date.now();
+    console.log(`🔗 Step 2: Generating map URL...`);
+    
+    // Helper function to make strings URL-friendly
+    const urlFriendly = (str: string) => 
+      str.toLowerCase()
+         .replace(/\s+/g, '-')
+         .replace(/[^a-z0-9-]/g, '')
+         .replace(/-+/g, '-')
+         .replace(/^-|-$/g, '');
+
+    // Create Whop public URL format
+    const bizNameUrl = urlFriendly(experience.bizName);
+    const experienceTitleUrl = urlFriendly(experience.title);
+    const expIdWithoutPrefix = experienceId.slice(4);
+    const mapUrl = `https://whop.com/${bizNameUrl}/${experienceTitleUrl}-${expIdWithoutPrefix}/app`;
+    
+    const step2Duration = Date.now() - step2Start;
+    console.log(`✅ Step 2 completed in ${step2Duration}ms - URL: ${mapUrl}`);
+
+    // Step 3: Create forum content
+    const step3Start = Date.now();
+    console.log(`📝 Step 3: Creating forum post content...`);
+    
+    const addressText = place.address 
+      ? `Address: ${place.address}`
+      : `Coordinates: ${place.latitude.toFixed(4)}, ${place.longitude.toFixed(4)}`;
+
+    const categoryText = place.category ? `Category: ${place.category}` : null;
+    const descriptionText = place.description ? `Description: ${place.description}` : null;
+    const mapUrlText = `🔗 View on Map: ${mapUrl}`;
+
+    // Create content
+    let postContent = `A new place has been added to the map! 🗺️
+${addressText}
+${categoryText || ''}
+${descriptionText || ''}
+
+${mapUrlText}`;
+
+    // Add image info if we have an attachment
+    if (attachmentId) {
+      postContent += '\n📸 See the map location in the image attached below!';
+    }
+    
+    const step3Duration = Date.now() - step3Start;
+    console.log(`✅ Step 3 completed in ${step3Duration}ms - Content prepared (${postContent.length} chars)`);
+
+    // Step 4: Create/find forum
+    const step4Start = Date.now();
+    console.log(`🏛️ Step 4: Creating/finding Places Forum...`);
+    
+    let forumId: string | null = null;
+    try {
+      const forumResult = await whopApi
+        .withCompany(bizId)
+        .findOrCreateForum({
+          input: {
+            experienceId: experienceId,
+            name: "Places Forum",
+            whoCanPost: "everyone",
+          },
+        });
+      
+      forumId = forumResult.createForum?.id || experienceId;
+      const step4Duration = Date.now() - step4Start;
+      console.log(`✅ Step 4 completed in ${step4Duration}ms - Forum ready: ${forumId}`);
+    } catch (error: any) {
+      const step4Duration = Date.now() - step4Start;
+      console.log(`⚠️ Step 4 completed in ${step4Duration}ms - Using experienceId as forumId fallback`);
+      forumId = experienceId;
+    }
+
+    if (!forumId) {
+      console.error("❌ Could not create or find forum - aborting");
+      return;
+    }
+
+    // Step 5: Prepare forum post
+    const step5Start = Date.now();
+    console.log(`🛠️ Step 5: Preparing forum post input...`);
+    
+    const forumPostInput: any = {
+      forumExperienceId: forumId,
+      title: `📍 New Place Added: ${place.name}`,
+      content: postContent,
+      isMention: true,
+    };
+
+    // OPTIMIZATION: Use pre-uploaded attachment if available
+    if (attachmentId) {
+      forumPostInput.attachments = [
+        {
+          directUploadId: attachmentId,
+        },
+      ];
+      console.log(`📎 Including pre-uploaded attachment: ${attachmentId}`);
+    } else {
+      console.log(`📝 Creating text-only post (no attachment)`);
+    }
+    
+    const step5Duration = Date.now() - step5Start;
+    console.log(`✅ Step 5 completed in ${step5Duration}ms - Post input prepared`);
+
+    // Step 6: Create forum post
+    const step6Start = Date.now();
+    console.log(`📤 Step 6: Creating forum post...`);
+    
+    const postResult = await whopApi
+      .withCompany(bizId)
+      .createForumPost({
+        input: forumPostInput,
+      });
+
+    const step6Duration = Date.now() - step6Start;
+    const totalDuration = Date.now() - totalStartTime;
+
+    if (postResult.createForumPost) {
+      console.log(`✅ Step 6 completed in ${step6Duration}ms - Forum post created!`);
+      console.log(`📝 Post ID: ${postResult.createForumPost.id}`);
+      
+      if (attachmentId) {
+        console.log(`📸 With pre-uploaded attachment: ${attachmentId}`);
+      } else {
+        console.log(`📝 Text-only post (no image)`);
+      }
+      
+      console.log(`🎯 === FORUM POST CREATION COMPLETE ===`);
+      console.log(`⏱️ TOTAL TIME: ${totalDuration}ms`);
+      console.log(`📊 BREAKDOWN:`);
+      console.log(`   - Step 1 (Experience): ${step1Duration}ms`);
+      console.log(`   - Step 2 (URL): ${step2Duration}ms`);
+      console.log(`   - Step 3 (Content): ${step3Duration}ms`);
+      console.log(`   - Step 4 (Forum): ${Date.now() - step4Start}ms`);
+      console.log(`   - Step 5 (Prepare): ${step5Duration}ms`);
+      console.log(`   - Step 6 (Post): ${step6Duration}ms`);
+    } else {
+      console.error(`❌ Step 6 failed in ${step6Duration}ms - No forum post created`);
+    }
+
+  } catch (error) {
+    const totalDuration = Date.now() - totalStartTime;
+    console.error(`❌ Forum post creation failed after ${totalDuration}ms:`, error);
+    
+    // OPTIMIZATION: Always provide fallback notification
+    console.log(`=== FALLBACK: New Place Added ===`);
+    console.log(`📍 ${place.name}`);
+    if (place.address) console.log(`📍 ${place.address}`);
+    if (place.description) console.log(`📝 ${place.description}`);
+    
+    // Send basic webhook notification
+    if (process.env.DEFAULT_WEBHOOK_URL) {
+      try {
+        await fetch(process.env.DEFAULT_WEBHOOK_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            content: `📍 New place added: **${place.name}**${place.address ? `\n📍 ${place.address}` : ''}`
+          })
+        });
+        console.log(`✅ Fallback webhook sent`);
+      } catch (webhookError) {
+        console.error("Fallback webhook failed:", webhookError);
+      }
+    }
+  }
+}

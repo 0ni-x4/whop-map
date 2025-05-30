@@ -4,6 +4,7 @@ import { useState } from 'react';
 import type { NewPlacePosition } from './types';
 import { geocodeAddress } from './utils';
 import { controlPanelStyles } from './styles';
+import { uploadImageFromClient } from './MapContainer';
 
 interface PlaceControlPanelProps {
   experienceId: string;
@@ -13,6 +14,31 @@ interface PlaceControlPanelProps {
   setNewPlacePosition: (position: NewPlacePosition | null) => void;
   updateNewMarker: (lng: number, lat: number) => void;
   map: any;
+}
+
+/**
+ * Generate Mapbox Static Image URL
+ */
+function getMapboxStaticImageUrl(lat: number, lng: number): string | null {
+  const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
+  if (!mapboxToken) {
+    console.warn("No Mapbox token configured");
+    return null;
+  }
+
+  try {
+    // OPTIMIZATION: Smaller image size for faster loading
+    const staticImageUrl = `https://api.mapbox.com/styles/v1/mapbox/streets-v12/static/` +
+      `pin-s-marker+dc2626(${lng},${lat})/` + // Red pin marker
+      `${lng},${lat},12,0/` + // Lower zoom for faster loading
+      `300x200?` + // Smaller size
+      `access_token=${mapboxToken}`;
+
+    return staticImageUrl;
+  } catch (error) {
+    console.error("Error generating Mapbox Static image URL:", error);
+    return null;
+  }
 }
 
 export default function PlaceControlPanel({
@@ -29,9 +55,7 @@ export default function PlaceControlPanel({
   const [newPlaceCategory, setNewPlaceCategory] = useState("");
   const [newPlaceAddress, setNewPlaceAddress] = useState("");
   const [isGeocoding, setIsGeocoding] = useState(false);
-  const [isAddingPlaceLoading, setIsAddingPlaceLoading] = useState(false);
-  const [showNameError, setShowNameError] = useState(false);
-  const [showPositionError, setShowPositionError] = useState(false);
+  const [isCreatingPlace, setIsCreatingPlace] = useState(false);
 
   const handleAddressGeocode = async () => {
     if (!newPlaceAddress.trim() || !map) return;
@@ -44,7 +68,7 @@ export default function PlaceControlPanel({
       setNewPlacePosition({ lng: result.lng, lat: result.lat });
       setNewPlaceAddress(result.fullAddress);
       
-      // Update map view and marker
+      // Fly to the geocoded location and show preview marker
       map.flyTo({ center: [result.lng, result.lat], zoom: 6 });
       updateNewMarker(result.lng, result.lat);
     } else {
@@ -53,30 +77,55 @@ export default function PlaceControlPanel({
   };
 
   const handleAddPlace = async () => {
-    if (!newPlacePosition || !newPlaceName.trim()) {
-      if (!newPlaceName.trim()) {
-        setShowNameError(true);
-      }
-      if (!newPlacePosition) {
-        setShowPositionError(true);
-      }
-      return;
-    }
+    if (!newPlacePosition || !newPlaceName.trim()) return;
 
-    setShowNameError(false);
-    setShowPositionError(false);
-    setIsAddingPlaceLoading(true);
-
-    const newPlace = {
-      name: newPlaceName,
-      description: newPlaceDescription || null,
-      latitude: newPlacePosition.lat,
-      longitude: newPlacePosition.lng,
-      address: newPlaceAddress || null,
-      category: newPlaceCategory || null,
-    };
-
+    setIsCreatingPlace(true);
+    console.log(`🚀 === CLIENT-SIDE PLACE CREATION START ===`);
+    
     try {
+      // Step 1: Try to upload image from client first (optional)
+      let attachmentId: string | null = null;
+      
+      console.log(`📸 Step 1: Attempting client-side image upload...`);
+      const imageStart = Date.now();
+      
+      const staticImageUrl = getMapboxStaticImageUrl(
+        newPlacePosition.lat, 
+        newPlacePosition.lng
+      );
+      
+      if (staticImageUrl) {
+        try {
+          attachmentId = await uploadImageFromClient(staticImageUrl, experienceId);
+          const imageDuration = Date.now() - imageStart;
+          
+          if (attachmentId) {
+            console.log(`✅ Step 1 completed in ${imageDuration}ms - Image uploaded: ${attachmentId}`);
+          } else {
+            console.log(`⚠️ Step 1 completed in ${imageDuration}ms - Image upload failed, proceeding without image`);
+          }
+        } catch (error) {
+          const imageDuration = Date.now() - imageStart;
+          console.log(`⚠️ Step 1 failed in ${imageDuration}ms - Image upload error, proceeding without image:`, error);
+        }
+      } else {
+        console.log(`⚠️ Step 1 skipped - No Mapbox token or URL generation failed`);
+      }
+
+      // Step 2: Create place with optional attachment ID
+      console.log(`🏗️ Step 2: Creating place record...`);
+      const placeStart = Date.now();
+
+      const newPlace = {
+        name: newPlaceName,
+        description: newPlaceDescription || null,
+        latitude: newPlacePosition.lat,
+        longitude: newPlacePosition.lng,
+        address: newPlaceAddress || null,
+        category: newPlaceCategory || null,
+        attachmentId: attachmentId, // Pass the pre-uploaded image
+      };
+
       const response = await fetch(`/api/experiences/${experienceId}/places`, {
         method: "POST",
         headers: {
@@ -86,21 +135,24 @@ export default function PlaceControlPanel({
       });
 
       if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Failed to add place: ${response.status} ${errorText}`);
+        throw new Error("Failed to add place");
       }
 
       const result = await response.json();
+      const placeDuration = Date.now() - placeStart;
+      console.log(`✅ Step 2 completed in ${placeDuration}ms - Place created: ${result.id}`);
+
+      console.log(`🎯 === CLIENT-SIDE PLACE CREATION COMPLETE ===`);
       
-      // Reset form
+      // Reset form and refresh page to show new place
       resetForm();
-      
-      // Refresh the page to show the new place
       window.location.reload();
+
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      alert(`Error adding place: ${errorMessage}`);
-      setIsAddingPlaceLoading(false);
+      console.error("❌ Error adding place:", error);
+      alert("Failed to add place. Please try again.");
+    } finally {
+      setIsCreatingPlace(false);
     }
   };
 
@@ -111,9 +163,6 @@ export default function PlaceControlPanel({
     setNewPlaceAddress("");
     setNewPlacePosition(null);
     setIsAddingPlace(false);
-    setIsAddingPlaceLoading(false);
-    setShowNameError(false);
-    setShowPositionError(false);
   };
 
   return (
@@ -124,46 +173,21 @@ export default function PlaceControlPanel({
         <button 
           className={`control-button ${isAddingPlace ? 'active' : ''}`}
           onClick={() => setIsAddingPlace(!isAddingPlace)}
+          disabled={isCreatingPlace}
         >
-          {isAddingPlace ? '✕ Cancel' : '+ Add Place'}
+          {isCreatingPlace ? 'Creating...' : isAddingPlace ? '✕ Cancel' : '+ Add Place'}
         </button>
 
         {isAddingPlace && (
           <>
-           
-            
             <input
               type="text"
               placeholder="Place name *"
               value={newPlaceName}
-              onChange={(e) => {
-                setNewPlaceName(e.target.value);
-                if (showNameError && e.target.value.trim()) {
-                  setShowNameError(false);
-                }
-              }}
+              onChange={(e) => setNewPlaceName(e.target.value)}
               className="control-input"
-              style={{
-                borderColor: showNameError ? '#dc2626' : undefined,
-                borderWidth: showNameError ? '2px' : undefined
-              }}
+              disabled={isCreatingPlace}
             />
-            
-            {showNameError && (
-              <div style={{ 
-                fontSize: '11px', 
-                color: '#dc2626', 
-                marginTop: '-4px', 
-                marginBottom: '8px',
-                fontWeight: '600',
-                backgroundColor: '#fef2f2',
-                border: '1px solid #fecaca',
-                borderRadius: '4px',
-                padding: '6px 8px'
-              }}>
-                ⚠️ Place name is required
-              </div>
-            )}
             
             <input
               type="text"
@@ -171,6 +195,7 @@ export default function PlaceControlPanel({
               value={newPlaceDescription}
               onChange={(e) => setNewPlaceDescription(e.target.value)}
               className="control-input"
+              disabled={isCreatingPlace}
             />
             
             <input
@@ -179,6 +204,7 @@ export default function PlaceControlPanel({
               value={newPlaceCategory}
               onChange={(e) => setNewPlaceCategory(e.target.value)}
               className="control-input"
+              disabled={isCreatingPlace}
             />
             
             <input
@@ -187,56 +213,58 @@ export default function PlaceControlPanel({
               value={newPlaceAddress}
               onChange={(e) => setNewPlaceAddress(e.target.value)}
               className="control-input"
+              disabled={isCreatingPlace}
             />
             
             <button
               onClick={handleAddressGeocode}
-              disabled={!newPlaceAddress.trim() || isGeocoding}
+              disabled={!newPlaceAddress.trim() || isGeocoding || isCreatingPlace}
               className="control-button"
               style={{ fontSize: '11px', marginBottom: '8px' }}
             >
               {isGeocoding ? 'Searching...' : 'Find Address'}
             </button>
             
-            {!newPlacePosition && showPositionError && (
-              <div style={{ 
-                fontSize: '11px', 
-                color: '#dc2626', 
-                marginBottom: '8px',
-                fontWeight: '600',
-                backgroundColor: '#fef2f2',
-                border: '1px solid #fecaca',
-                borderRadius: '4px',
-                padding: '6px 8px'
-              }}>
-                ⚠️ Click on the map or use "Find Address" to set location
-              </div>
-            )}
-
             {newPlacePosition && (
               <div className="control-status">
                 ✓ Position: {newPlacePosition.lat.toFixed(4)}, {newPlacePosition.lng.toFixed(4)}
               </div>
             )}
 
-            <div className="control-actions">
-              <button 
-                onClick={handleAddPlace} 
-                disabled={isAddingPlaceLoading}
-                className="control-button"
-                style={{ 
-                  background: '#10b981 !important', 
-                  color: 'white !important', 
-                  width: '100%',
-                  marginBottom: 0,
-                  fontWeight: '600',
-                  fontSize: '13px',
-                  opacity: isAddingPlaceLoading ? '0.7' : '1'
-                }}
-              >
-                {isAddingPlaceLoading ? '⏳ Adding...' : '✓ Add'}
-              </button>
-            </div>
+            {newPlacePosition && (
+              <div className="control-actions">
+                <button 
+                  onClick={handleAddPlace} 
+                  disabled={!newPlaceName.trim() || isCreatingPlace}
+                  className="control-button"
+                  style={{ 
+                    background: '#10b981 !important', 
+                    color: 'white !important', 
+                    flex: '2', 
+                    marginBottom: 0,
+                    fontWeight: '600',
+                    fontSize: '13px'
+                  }}
+                >
+                  {isCreatingPlace ? '⏳ Creating...' : '✓ Add'}
+                </button>
+                <button
+                  onClick={resetForm}
+                  disabled={isCreatingPlace}
+                  className="control-button"
+                  style={{ 
+                    background: '#dc2626 !important', 
+                    color: 'white !important', 
+                    flex: '1', 
+                    padding: '8px', 
+                    marginBottom: 0,
+                    fontSize: '12px'
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+            )}
           </>
         )}
       </div>

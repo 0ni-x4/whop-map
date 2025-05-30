@@ -18,7 +18,10 @@ interface MapContainerProps {
   onMapReady: (map: mapboxgl.Map) => void;
 }
 
-// Create proper SVG pin marker
+/**
+ * Creates a custom SVG pin marker
+ * This is the same function as in MapView - consider extracting to utils
+ */
 const createPinMarker = (color = '#dc2626') => {
   const markerEl = document.createElement('div');
   markerEl.className = 'custom-marker';
@@ -30,6 +33,76 @@ const createPinMarker = (color = '#dc2626') => {
   `;
   return markerEl;
 };
+
+/**
+ * CLIENT-SIDE: Upload image directly from browser to Whop
+ * This bypasses server-side network issues entirely
+ */
+export async function uploadImageFromClient(
+  imageUrl: string, 
+  experienceId: string
+): Promise<string | null> {
+  console.log(`🖥️ === CLIENT-SIDE IMAGE UPLOAD START ===`);
+  console.log(`🔗 Image URL: ${imageUrl.substring(0, 80)}...`);
+  
+  try {
+    // Step 1: Fetch image from Mapbox (client-side)
+    const fetchStart = Date.now();
+    console.log(`📥 Step 1: Fetching image from client...`);
+    
+    const imageResponse = await fetch(imageUrl);
+    if (!imageResponse.ok) {
+      throw new Error(`Failed to fetch image: ${imageResponse.status}`);
+    }
+    
+    const fetchDuration = Date.now() - fetchStart;
+    console.log(`✅ Step 1 completed in ${fetchDuration}ms`);
+
+    // Step 2: Convert to blob
+    const blobStart = Date.now();
+    console.log(`🔄 Step 2: Converting to blob...`);
+    
+    const imageBlob = await imageResponse.blob();
+    const blobDuration = Date.now() - blobStart;
+    console.log(`✅ Step 2 completed in ${blobDuration}ms - Size: ${imageBlob.size} bytes`);
+
+    // Step 3: Upload via our API with the blob
+    const uploadStart = Date.now();
+    console.log(`⬆️ Step 3: Uploading via client API...`);
+    
+    const uploadResponse = await fetch(`/api/experiences/${experienceId}/upload-image`, {
+      method: 'POST',
+      body: imageBlob,
+      headers: {
+        'Content-Type': 'image/jpeg',
+      },
+    });
+
+    if (!uploadResponse.ok) {
+      const errorText = await uploadResponse.text();
+      throw new Error(`Upload failed: ${uploadResponse.status} - ${errorText}`);
+    }
+
+    const uploadResult = await uploadResponse.json();
+    const uploadDuration = Date.now() - uploadStart;
+    const totalDuration = Date.now() - fetchStart;
+
+    if (uploadResult.success && uploadResult.attachmentId) {
+      console.log(`✅ Step 3 completed in ${uploadDuration}ms`);
+      console.log(`🎯 === CLIENT-SIDE UPLOAD COMPLETE ===`);
+      console.log(`⏱️ TOTAL TIME: ${totalDuration}ms`);
+      console.log(`📎 Attachment ID: ${uploadResult.attachmentId}`);
+      return uploadResult.attachmentId;
+    } else {
+      console.error(`❌ Upload result missing attachmentId:`, uploadResult);
+      return null;
+    }
+
+  } catch (error) {
+    console.error(`❌ Client-side image upload failed:`, error);
+    return null;
+  }
+}
 
 export default function MapContainer({
   places,
@@ -45,9 +118,9 @@ export default function MapContainer({
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const markersRef = useRef<mapboxgl.Marker[]>([]);
-  const newMarkerRef = useRef<mapboxgl.Marker | null>(null);
 
   useEffect(() => {
+    // Prevent double initialization
     if (!mapContainer.current || map.current) return;
 
     const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
@@ -55,23 +128,25 @@ export default function MapContainer({
 
     mapboxgl.accessToken = mapboxToken;
 
+    // Slight delay to ensure DOM is ready
     setTimeout(() => {
       try {
         if (!mapContainer.current) return;
         
+        // Initialize Mapbox map with 3D globe projection
         const mapInstance = new mapboxgl.Map({
           container: mapContainer.current,
-          style: 'mapbox://styles/mapbox/standard',
-          center: [-90, 25],
-          zoom: 2,
-          projection: 'globe' as any,
-          antialias: true,
-          renderWorldCopies: false,
+          style: 'mapbox://styles/mapbox/standard', // Clean, modern base style
+          center: [-90, 25], // Center on North America
+          zoom: 2, // Global view
+          projection: 'globe' as any, // 3D globe projection
+          antialias: true, // Smooth edges
+          renderWorldCopies: false, // Don't repeat the world
           maxZoom: 20,
           minZoom: 1
         });
 
-        // Create ResizeObserver
+        // Handle window resizing
         const resizeObserver = new ResizeObserver((entries) => {
           if (mapInstance) {
             setTimeout(() => {
@@ -85,21 +160,21 @@ export default function MapContainer({
         }
 
         mapInstance.on('load', () => {
-          // Set atmosphere styling
+          // Configure 3D atmosphere effect
           mapInstance.setFog({
-            color: 'rgba(140, 195, 255, 0.5)',
-            'high-color': 'rgba(243, 181, 255, 0.4)',
-            'horizon-blend': 0.03,
-            'space-color': 'rgb(12, 12, 35)',
-            'star-intensity': 0.6
+            color: 'rgba(140, 195, 255, 0.5)', // Sky blue atmosphere
+            'high-color': 'rgba(243, 181, 255, 0.4)', // Purple highlights
+            'horizon-blend': 0.03, // Smooth horizon transition
+            'space-color': 'rgb(12, 12, 35)', // Dark space background
+            'star-intensity': 0.6 // Subtle star field
           });
 
-          // Add markers for each place
+          // Add markers for each existing place
           places.forEach(place => {
-            // Create proper pin marker
+            // Create red pin marker for existing places
             const markerEl = createPinMarker('#dc2626');
             
-            // Create popup following Mapbox demo pattern
+            // Create popup with place information
             const popup = new mapboxgl.Popup({ offset: 25 })
               .setHTML(`
                 <div class="place-info">
@@ -115,19 +190,19 @@ export default function MapContainer({
                 </div>
               `);
             
-            // Add marker with popup using Mapbox demo pattern
+            // Create marker with popup
             const marker = new mapboxgl.Marker({ 
               element: markerEl,
-              anchor: 'bottom'
+              anchor: 'bottom' // Pin tip points to exact coordinates
             })
               .setLngLat([place.longitude, place.latitude])
-              .setPopup(popup)
+              .setPopup(popup) // Attach popup to marker
               .addTo(mapInstance);
 
             markersRef.current.push(marker);
           });
 
-          // Map click handler for adding places
+          // Handle map clicks for adding new places (admin only)
           if (accessLevel === "admin") {
             mapInstance.on('click', (e) => {
               if (isAddingPlace) {
@@ -138,7 +213,7 @@ export default function MapContainer({
             });
           }
 
-          // Remove unnecessary layers
+          // Remove unnecessary map layers for cleaner look
           ['land-structure-line', 'waterway-label', 'natural-point-label', 
            'water-point-label', 'water-line-label'].forEach(layer => {
             if (mapInstance.getLayer(layer)) {
@@ -146,7 +221,7 @@ export default function MapContainer({
             }
           });
           
-          // Add custom layer for country borders
+          // Add custom country boundaries
           mapInstance.addSource('country-boundaries', {
             type: 'vector',
             url: 'mapbox://mapbox.country-boundaries-v1'
@@ -158,28 +233,30 @@ export default function MapContainer({
             source: 'country-boundaries',
             'source-layer': 'country_boundaries',
             paint: {
-              'line-color': 'rgba(255, 182, 193, 0.3)',
+              'line-color': 'rgba(255, 182, 193, 0.3)', // Subtle pink borders
               'line-width': 0.4,
               'line-opacity': 0.4
             }
           });
 
-          // Adjust terrain and atmosphere
+          // Configure lighting for 3D effect
           mapInstance.setLight({
-            intensity: 0.15,
-            color: 'rgb(215, 205, 245)',
-            anchor: 'map'
+            intensity: 0.15, // Subtle lighting
+            color: 'rgb(215, 205, 245)', // Soft purple light
+            anchor: 'map' // Light follows map rotation
           });
 
+          // Ensure map renders properly
           mapInstance.resize();
         });
 
         map.current = mapInstance;
         onMapReady(mapInstance);
 
-        // Add global delete function
-        window.deletePlace = onDeletePlace;
+        // Make delete function globally available for popup buttons
+        (window as any).deletePlace = onDeletePlace;
 
+        // Handle window resize events
         const handleResize = () => {
           if (map.current) {
             map.current.resize();
@@ -188,13 +265,11 @@ export default function MapContainer({
 
         window.addEventListener('resize', handleResize);
         
+        // Cleanup function
         return () => {
           window.removeEventListener('resize', handleResize);
           resizeObserver.disconnect();
           markersRef.current.forEach((marker: mapboxgl.Marker) => marker.remove());
-          if (newMarkerRef.current) {
-            newMarkerRef.current.remove();
-          }
           if (map.current) {
             map.current.remove();
           }
@@ -203,29 +278,18 @@ export default function MapContainer({
         console.error('Error initializing map:', error);
       }
     }, 100);
-  }, [places, isAddingPlace, accessLevel, experienceId, setNewPlacePosition, updateNewMarker, onDeletePlace, onMapReady]);
-
-  // Update new marker when position changes
-  useEffect(() => {
-    if (newPlacePosition && map.current) {
-      updateNewMarker(newPlacePosition.lng, newPlacePosition.lat);
-    }
-  }, [newPlacePosition, updateNewMarker]);
+  }, [places, accessLevel, experienceId, isAddingPlace, setNewPlacePosition, updateNewMarker, onDeletePlace, onMapReady]);
 
   return (
     <>
+      {/* Inject map styles */}
       <style dangerouslySetInnerHTML={{ __html: mapStyles }} />
       
+      {/* Map container */}
       <div 
         ref={mapContainer} 
-        style={{ 
-          position: 'absolute',
-          top: 0,
-          bottom: 0,
-          left: 0,
-          right: 0,
-          background: 'rgb(12, 12, 35)'
-        }} 
+        className="w-full h-full"
+        style={{ position: 'relative' }}
       />
     </>
   );
