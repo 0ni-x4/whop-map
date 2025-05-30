@@ -116,17 +116,17 @@ export default function MapView({
         onMapReady={handleMapReady}
       />
       
-      {accessLevel === "admin" && (
-        <PlaceControlPanel
-          experienceId={experienceId}
-          isAddingPlace={isAddingPlace}
-          setIsAddingPlace={setIsAddingPlace}
-          newPlacePosition={newPlacePosition}
-          setNewPlacePosition={setNewPlacePosition}
-          updateNewMarker={updateNewMarker}
-          map={mapRef.current}
-        />
-      )}
+      {/* Control panel - show for all users, but functionality varies by access level */}
+      <PlaceControlPanel
+        experienceId={experienceId}
+        accessLevel={accessLevel}
+        isAddingPlace={isAddingPlace}
+        setIsAddingPlace={setIsAddingPlace}
+        newPlacePosition={newPlacePosition}
+        setNewPlacePosition={setNewPlacePosition}
+        updateNewMarker={updateNewMarker}
+        map={mapRef.current}
+      />
     </div>
   );
 } 

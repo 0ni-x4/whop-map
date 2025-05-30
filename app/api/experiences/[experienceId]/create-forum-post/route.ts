@@ -69,28 +69,40 @@ export async function POST(request: Request) {
     console.log(`✅ Step 1 completed in ${Date.now() - step1Start}ms`);
     console.log(`🏢 Experience: ${experienceName}, Biz: ${bizId}`);
 
-    // Step 2: Generate app URL
+    // Step 2: Generate app URL (using correct whop.com format)
     console.log(`🔗 Step 2: Generating app URL...`);
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-    const mapUrl = `${appUrl}/experiences/${experienceId}`;
+    
+    // Helper function to create URL-friendly strings
+    const urlFriendly = (str: string) => str
+      .toLowerCase()
+      .replace(/[^a-z0-9-]/g, '')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '');
+
+    // Create Whop public URL format
+    const bizNameUrl = urlFriendly(whopExperience.experience.company.title);
+    const experienceTitleUrl = urlFriendly(experienceName);
+    const expIdWithoutPrefix = experienceId.slice(4);
+    const mapUrl = `https://whop.com/${bizNameUrl}/${experienceTitleUrl}-${expIdWithoutPrefix}/app`;
+    
     console.log(`✅ Step 2 completed - URL: ${mapUrl}`);
 
-    // Step 3: Create forum content
+    // Step 3: Create forum content (NO MARKDOWN - plain text only)
     console.log(`📝 Step 3: Creating forum content...`);
-    let content = `📍 **New Place Added: ${placeName}**\n\n`;
+    let content = `\n`;
     content += `A new place has been added to the map! 🗺️\n\n`;
     
     if (address) {
-      content += `**Address:** ${address}\n`;
+      content += `Address: ${address}\n`;
     }
     if (category) {
-      content += `**Category:** ${category}\n`;
+      content += `Category: ${category}\n`;
     }
     if (placeDescription) {
-      content += `**Description:** ${placeDescription}\n`;
+      content += `Description: ${placeDescription}\n`;
     }
     
-    content += `\n🔗 **[View on Map](${mapUrl})**\n\n`;
+    content += `\nView on Map: ${mapUrl}\n\n`;
     content += `Click the link above to explore this location and all other places on our interactive map!`;
     
     console.log(`✅ Step 3 completed - Content: ${content.length} chars`);

@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from 'react';
-import type { NewPlacePosition } from './types';
+import { useState, useEffect } from 'react';
+import type { NewPlacePosition, Place } from './types';
 import { geocodeAddress } from './utils';
 import { controlPanelStyles } from './styles';
 
 interface PlaceControlPanelProps {
   experienceId: string;
+  accessLevel: "admin" | "customer" | "no_access";
   isAddingPlace: boolean;
   setIsAddingPlace: (value: boolean) => void;
   newPlacePosition: NewPlacePosition | null;
@@ -16,7 +17,7 @@ interface PlaceControlPanelProps {
 }
 
 /**
- * Generate Mapbox Static Image URL
+ * Generate Mapbox Static Image URL with high quality and no watermark
  */
 function getMapboxStaticImageUrl(lat: number, lng: number): string | null {
   const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
@@ -26,11 +27,12 @@ function getMapboxStaticImageUrl(lat: number, lng: number): string | null {
   }
 
   try {
-    // OPTIMIZATION: Smaller image size for faster loading
+    // HIGH QUALITY: Larger size, better zoom, retina quality, no logo
     const staticImageUrl = `https://api.mapbox.com/styles/v1/mapbox/streets-v12/static/` +
-      `pin-s-marker+dc2626(${lng},${lat})/` + // Red pin marker
-      `${lng},${lat},12,0/` + // Lower zoom for faster loading
-      `300x200?` + // Smaller size
+      `pin-l-marker+dc2626(${lng},${lat})/` + // Large pin marker (pin-l instead of pin-s)
+      `${lng},${lat},14,0/` + // Higher zoom level (14 instead of 12) for more detail
+      `600x400@2x?` + // Larger size (600x400) with retina quality (@2x)
+      `logo=false&` + // Remove Mapbox logo/watermark
       `access_token=${mapboxToken}`;
 
     return staticImageUrl;
@@ -150,6 +152,7 @@ async function createForumPostFromClient(
 
 export default function PlaceControlPanel({
   experienceId,
+  accessLevel,
   isAddingPlace,
   setIsAddingPlace,
   newPlacePosition,
@@ -157,36 +160,87 @@ export default function PlaceControlPanel({
   updateNewMarker,
   map
 }: PlaceControlPanelProps) {
+  // Form state
   const [newPlaceName, setNewPlaceName] = useState("");
   const [newPlaceDescription, setNewPlaceDescription] = useState("");
   const [newPlaceCategory, setNewPlaceCategory] = useState("");
   const [newPlaceAddress, setNewPlaceAddress] = useState("");
+  
+  // Loading states
   const [isGeocoding, setIsGeocoding] = useState(false);
   const [isCreatingPlace, setIsCreatingPlace] = useState(false);
+  const [isLoadingPlaces, setIsLoadingPlaces] = useState(false);
+  
+  // Error states
+  const [error, setError] = useState<string | null>(null);
+  const [geocodingError, setGeocodingError] = useState<string | null>(null);
+  
+  // Places list state
+  const [showPlacesList, setShowPlacesList] = useState(false);
+  const [places, setPlaces] = useState<Place[]>([]);
+  const [placesLoaded, setPlacesLoaded] = useState(false);
+  
+  // Current operation state for better UX
+  const [currentOperation, setCurrentOperation] = useState<string>("");
+
+  // Preload places when component mounts
+  useEffect(() => {
+    fetchPlaces();
+  }, []);
+
+  const fetchPlaces = async () => {
+    if (placesLoaded) return; // Don't fetch if already loaded
+    
+    setIsLoadingPlaces(true);
+    setError(null);
+    
+    try {
+      const response = await fetch(`/api/experiences/${experienceId}/places`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch places');
+      }
+      const fetchedPlaces = await response.json();
+      setPlaces(fetchedPlaces);
+      setPlacesLoaded(true);
+    } catch (err) {
+      setError('Failed to load places');
+      console.error('Error fetching places:', err);
+    } finally {
+      setIsLoadingPlaces(false);
+    }
+  };
 
   const handleAddressGeocode = async () => {
     if (!newPlaceAddress.trim() || !map) return;
     
     setIsGeocoding(true);
-    const result = await geocodeAddress(newPlaceAddress);
-    setIsGeocoding(false);
+    setGeocodingError(null);
+    setCurrentOperation("Finding address...");
     
-    if (result) {
-      setNewPlacePosition({ lng: result.lng, lat: result.lat });
-      setNewPlaceAddress(result.fullAddress);
+    try {
+      const result = await geocodeAddress(newPlaceAddress);
       
-      // Fly to the geocoded location and show preview marker
-      map.flyTo({ center: [result.lng, result.lat], zoom: 6 });
-      updateNewMarker(result.lng, result.lat);
-    } else {
-      alert('Could not find that address. Please try a different address or click on the map.');
+      if (result) {
+        setNewPlacePosition({ lng: result.lng, lat: result.lat });
+        setNewPlaceAddress(result.fullAddress);
+        
+        // Fly to the geocoded location and show preview marker
+        map.flyTo({ center: [result.lng, result.lat], zoom: 6 });
+        updateNewMarker(result.lng, result.lat);
+        setCurrentOperation("Address found!");
+        
+        // Clear success message after 2 seconds
+        setTimeout(() => setCurrentOperation(""), 2000);
+      } else {
+        setGeocodingError('Could not find that address. Please try a different address or click on the map.');
+      }
+    } catch (err) {
+      setGeocodingError('Error searching for address. Please try again.');
+    } finally {
+      setIsGeocoding(false);
     }
   };
 
-  /**
-   * Submits new place to the API and creates forum post
-   * All operations now happen client-side to avoid Vercel timeouts
-   */
   const handleAddPlace = async () => {
     if (!newPlacePosition || !newPlaceName.trim()) return;
 
@@ -199,6 +253,10 @@ export default function PlaceControlPanel({
       category: newPlaceCategory || null,
     };
 
+    setIsCreatingPlace(true);
+    setError(null);
+    setCurrentOperation("Creating place...");
+
     try {
       console.log(`🔄 Starting complete place creation flow: ${newPlaceName}`);
       
@@ -206,6 +264,7 @@ export default function PlaceControlPanel({
       let attachmentId: string | null = null;
       
       console.log(`📸 Step 1: Attempting image upload...`);
+      setCurrentOperation("Uploading image...");
       const imageStart = Date.now();
       
       const staticImageUrl = getMapboxStaticImageUrl(
@@ -221,21 +280,25 @@ export default function PlaceControlPanel({
           
           if (attachmentId) {
             console.log(`✅ Step 1 completed in ${imageDuration}ms - Image uploaded: ${attachmentId}`);
-            // Store globally for forum post creation
             (window as any).lastUploadedAttachmentId = attachmentId;
+            setCurrentOperation("Image uploaded!");
           } else {
             console.log(`⚠️ Step 1 completed in ${imageDuration}ms - Image upload returned null`);
+            setCurrentOperation("Image upload failed, continuing...");
           }
         } catch (error) {
           const imageDuration = Date.now() - imageStart;
           console.error(`❌ Step 1 failed in ${imageDuration}ms - Image upload error:`, error);
+          setCurrentOperation("Image upload failed, continuing...");
         }
       } else {
         console.log(`⚠️ Step 1 skipped - No Mapbox token or URL generation failed`);
+        setCurrentOperation("No image token, continuing...");
       }
 
       // Step 2: Create the place (no forum post on server side)
       console.log(`🏗️ Step 2: Creating place record...`);
+      setCurrentOperation("Saving place...");
       const placeStart = Date.now();
       
       const response = await fetch(`/api/experiences/${experienceId}/places`, {
@@ -245,7 +308,7 @@ export default function PlaceControlPanel({
         },
         body: JSON.stringify({
           ...newPlace,
-          skipForumPost: true, // Tell server to skip forum post creation
+          skipForumPost: true,
         }),
       });
 
@@ -256,12 +319,14 @@ export default function PlaceControlPanel({
       const createdPlace = await response.json();
       const placeDuration = Date.now() - placeStart;
       console.log(`✅ Step 2 completed in ${placeDuration}ms - Place created: ${createdPlace.id}`);
+      setCurrentOperation("Place created!");
 
       // Step 3: Create forum post (client-side)
       let forumSuccess = false;
       
       if (attachmentId) {
         console.log(`📤 Step 3: Creating forum post with attachment...`);
+        setCurrentOperation("Creating forum post...");
         const forumStart = Date.now();
         
         forumSuccess = await createForumPostFromClient(
@@ -275,21 +340,35 @@ export default function PlaceControlPanel({
         
         const forumDuration = Date.now() - forumStart;
         console.log(`${forumSuccess ? '✅' : '❌'} Step 3 completed in ${forumDuration}ms`);
+        setCurrentOperation(forumSuccess ? "Forum post created!" : "Forum post failed");
       } else {
         console.warn(`⚠️ Step 3 skipped - No attachment ID available`);
+        setCurrentOperation("Forum post skipped");
       }
 
       if (forumSuccess) {
         console.log(`🎉 Complete flow successful: Place + Forum post created!`);
+        setCurrentOperation("🎉 Success! Place and forum post created!");
       } else {
         console.log(`✅ Place created successfully (forum post skipped)`);
+        setCurrentOperation("✅ Place created successfully!");
       }
 
-      // Reset form and refresh page to show new place
-      resetForm();
-      window.location.reload();
+      // Update places list with new place and reset form
+      setPlaces(prev => [createdPlace, ...prev]);
+      
+      // Reset form and refresh after 2 seconds
+      setTimeout(() => {
+        resetForm();
+        window.location.reload();
+      }, 2000);
+
     } catch (error) {
       console.error("Error in complete place creation flow:", error);
+      setError("Failed to create place. Please try again.");
+      setCurrentOperation("");
+    } finally {
+      setIsCreatingPlace(false);
     }
   };
 
@@ -300,110 +379,198 @@ export default function PlaceControlPanel({
     setNewPlaceAddress("");
     setNewPlacePosition(null);
     setIsAddingPlace(false);
+    setError(null);
+    setGeocodingError(null);
+    setCurrentOperation("");
+  };
+
+  const togglePlacesList = () => {
+    // Close add place mode when opening places list
+    if (!showPlacesList && isAddingPlace) {
+      setIsAddingPlace(false);
+      resetForm();
+    }
+    
+    setShowPlacesList(!showPlacesList);
+  };
+
+  const toggleAddPlace = () => {
+    // Close places list when opening add place mode
+    if (!isAddingPlace && showPlacesList) {
+      setShowPlacesList(false);
+    }
+    
+    setIsAddingPlace(!isAddingPlace);
+  };
+
+  const navigateToPlace = (place: Place) => {
+    if (map) {
+      map.flyTo({
+        center: [place.longitude, place.latitude],
+        zoom: 15,
+        duration: 2000 // Smooth 2-second animation
+      });
+      setShowPlacesList(false); // Close the list after navigation
+    }
+  };
+
+  const getCurrentStatus = () => {
+    if (currentOperation) return currentOperation;
+    if (error) return error;
+    if (geocodingError) return geocodingError;
+    if (newPlacePosition) return `✓ Position: ${newPlacePosition.lat.toFixed(4)}, ${newPlacePosition.lng.toFixed(4)}`;
+    return null;
+  };
+
+  const getStatusColor = () => {
+    if (error || geocodingError) return '#dc2626'; // Red for errors
+    if (currentOperation.includes('Success') || currentOperation.includes('✅') || currentOperation.includes('🎉')) return '#10b981'; // Green for success
+    if (currentOperation.includes('found') || currentOperation.includes('created') || currentOperation.includes('uploaded')) return '#10b981'; // Green for success
+    if (newPlacePosition && !currentOperation) return '#10b981'; // Green for position set
+    return '#6b7280'; // Gray for neutral states
   };
 
   return (
     <>
       <style dangerouslySetInnerHTML={{ __html: controlPanelStyles }} />
       
-      <div className="places-controls">
-        <button 
-          className={`control-button ${isAddingPlace ? 'active' : ''}`}
-          onClick={() => setIsAddingPlace(!isAddingPlace)}
-          disabled={isCreatingPlace}
-        >
-          {isCreatingPlace ? 'Creating...' : isAddingPlace ? '✕ Cancel' : '+ Add Place'}
-        </button>
+      <div className={`places-controls ${showPlacesList ? 'expanded' : ''}`}>
+        {/* Places List Section (shows when expanded) */}
+        {showPlacesList && (
+          <div className="places-list-section">
+            <div className="places-list-header">
+              <h3>Places ({places.length})</h3>
+            </div>
+            
+            {isLoadingPlaces ? (
+              <div className="loading-state">
+                <div className="spinner"></div>
+                <span>Loading places...</span>
+              </div>
+            ) : places.length === 0 ? (
+              <div className="empty-state">
+                <span>No places added yet</span>
+              </div>
+            ) : (
+              <div className="places-list">
+                {places.map((place) => (
+                  <div
+                    key={place.id}
+                    className="place-item"
+                    onClick={() => navigateToPlace(place)}
+                  >
+                    <div className="place-item-main">
+                      <span className="place-name">{place.name}</span>
+                      {place.category && (
+                        <span className="place-category">{place.category}</span>
+                      )}
+                    </div>
+                    {place.address && (
+                      <div className="place-address">{place.address}</div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
-        {isAddingPlace && (
-          <>
-            <input
-              type="text"
-              placeholder="Place name *"
-              value={newPlaceName}
-              onChange={(e) => setNewPlaceName(e.target.value)}
-              className="control-input"
+        {/* Main Controls Section */}
+        <div className="main-controls">
+          {/* Primary Actions */}
+          <div className="primary-actions">
+            <button 
+              className="control-button primary"
+              onClick={togglePlacesList}
               disabled={isCreatingPlace}
-            />
-            
-            <input
-              type="text"
-              placeholder="Description"
-              value={newPlaceDescription}
-              onChange={(e) => setNewPlaceDescription(e.target.value)}
-              className="control-input"
-              disabled={isCreatingPlace}
-            />
-            
-            <input
-              type="text"
-              placeholder="Category"
-              value={newPlaceCategory}
-              onChange={(e) => setNewPlaceCategory(e.target.value)}
-              className="control-input"
-              disabled={isCreatingPlace}
-            />
-            
-            <input
-              type="text"
-              placeholder="Address"
-              value={newPlaceAddress}
-              onChange={(e) => setNewPlaceAddress(e.target.value)}
-              className="control-input"
-              disabled={isCreatingPlace}
-            />
-            
-            <button
-              onClick={handleAddressGeocode}
-              disabled={!newPlaceAddress.trim() || isGeocoding || isCreatingPlace}
-              className="control-button"
-              style={{ fontSize: '11px', marginBottom: '8px' }}
             >
-              {isGeocoding ? 'Searching...' : 'Find Address'}
+              📍 View Places ({places.length})
             </button>
             
-            {newPlacePosition && (
-              <div className="control-status">
-                ✓ Position: {newPlacePosition.lat.toFixed(4)}, {newPlacePosition.lng.toFixed(4)}
-              </div>
+            {/* Add Place button - only for admin users */}
+            {accessLevel === "admin" && (
+              <button 
+                className={`control-button ${isAddingPlace ? 'active' : 'primary'}`}
+                onClick={toggleAddPlace}
+                disabled={isCreatingPlace}
+              >
+                {isCreatingPlace ? '⏳ Creating...' : isAddingPlace ? '✕ Cancel' : '+ Add Place'}
+              </button>
             )}
+          </div>
 
-            {newPlacePosition && (
-              <div className="control-actions">
-                <button 
-                  onClick={handleAddPlace} 
-                  disabled={!newPlaceName.trim() || isCreatingPlace}
-                  className="control-button"
-                  style={{ 
-                    background: '#10b981 !important', 
-                    color: 'white !important', 
-                    flex: '2', 
-                    marginBottom: 0,
-                    fontWeight: '600',
-                    fontSize: '13px'
-                  }}
+          {/* Add Place Form (shows when adding) - only for admin users */}
+          {isAddingPlace && accessLevel === "admin" && (
+            <div className="add-place-form">
+              <input
+                type="text"
+                placeholder="Place name *"
+                value={newPlaceName}
+                onChange={(e) => setNewPlaceName(e.target.value)}
+                className="control-input"
+                disabled={isCreatingPlace}
+              />
+              
+              <input
+                type="text"
+                placeholder="Description"
+                value={newPlaceDescription}
+                onChange={(e) => setNewPlaceDescription(e.target.value)}
+                className="control-input"
+                disabled={isCreatingPlace}
+              />
+              
+              <input
+                type="text"
+                placeholder="Category"
+                value={newPlaceCategory}
+                onChange={(e) => setNewPlaceCategory(e.target.value)}
+                className="control-input"
+                disabled={isCreatingPlace}
+              />
+              
+              <input
+                type="text"
+                placeholder="Address"
+                value={newPlaceAddress}
+                onChange={(e) => setNewPlaceAddress(e.target.value)}
+                className="control-input"
+                disabled={isCreatingPlace}
+              />
+              
+              <button
+                onClick={handleAddressGeocode}
+                disabled={!newPlaceAddress.trim() || isGeocoding || isCreatingPlace}
+                className="control-button secondary"
+              >
+                {isGeocoding ? '🔍 Searching...' : '🔍 Find Address'}
+              </button>
+              
+              {/* Status Display */}
+              {getCurrentStatus() && (
+                <div 
+                  className="status-display"
+                  style={{ color: getStatusColor() }}
                 >
-                  {isCreatingPlace ? '⏳ Creating...' : '✓ Add'}
-                </button>
-                <button
-                  onClick={resetForm}
-                  disabled={isCreatingPlace}
-                  className="control-button"
-                  style={{ 
-                    background: '#dc2626 !important', 
-                    color: 'white !important', 
-                    flex: '1', 
-                    padding: '8px', 
-                    marginBottom: 0,
-                    fontSize: '12px'
-                  }}
-                >
-                  ✕
-                </button>
-              </div>
-            )}
-          </>
-        )}
+                  {getCurrentStatus()}
+                </div>
+              )}
+
+              {/* Action Buttons - only show when position is set */}
+              {newPlacePosition && !error && !geocodingError && (
+                <div className="form-actions">
+                  <button 
+                    onClick={handleAddPlace} 
+                    disabled={!newPlaceName.trim() || isCreatingPlace}
+                    className="control-button success"
+                  >
+                    {isCreatingPlace ? '⏳ Creating...' : '✓ Create Place'}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </>
   );

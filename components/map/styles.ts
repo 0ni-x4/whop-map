@@ -108,12 +108,144 @@ export const controlPanelStyles = `
     background: rgba(255, 255, 255, 0.95) !important;
     backdrop-filter: blur(10px) !important;
     border-radius: 10px !important;
-    padding: 12px !important;
+    padding: 0 !important;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12) !important;
-    z-index: 1 !important;
+    z-index: 1000 !important;
     width: 240px !important;
     border: 1px solid rgba(255, 255, 255, 0.2) !important;
+    transition: all 0.3s ease !important;
+    overflow: hidden !important;
+    max-height: 80vh !important;
   }
+  
+  /* Expanded state for places list - NO UPWARD MOVEMENT */
+  .places-controls.expanded {
+    max-height: 70vh !important;
+  }
+  
+  /* Places List Section */
+  .places-list-section {
+    padding: 12px !important;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05) !important;
+    max-height: 300px !important;
+    overflow-y: auto !important;
+    background: rgba(248, 248, 248, 0.3) !important;
+  }
+  
+  .places-list-header {
+    margin-bottom: 8px !important;
+  }
+  
+  .places-list-header h3 {
+    margin: 0 !important;
+    font-size: 12px !important;
+    font-weight: 600 !important;
+    color: #333 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.5px !important;
+  }
+  
+  .places-list {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 4px !important;
+  }
+  
+  .place-item {
+    padding: 8px !important;
+    background: white !important;
+    border-radius: 6px !important;
+    border: 1px solid rgba(0, 0, 0, 0.05) !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05) !important;
+  }
+  
+  .place-item:hover {
+    background: #f8f8f8 !important;
+    border-color: rgba(0, 0, 0, 0.1) !important;
+    transform: translateY(-1px) !important;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08) !important;
+  }
+  
+  .place-item-main {
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    margin-bottom: 2px !important;
+  }
+  
+  .place-name {
+    font-weight: 500 !important;
+    font-size: 11px !important;
+    color: #333 !important;
+  }
+  
+  .place-category {
+    font-size: 9px !important;
+    background: rgba(0, 0, 0, 0.05) !important;
+    color: #666 !important;
+    padding: 2px 4px !important;
+    border-radius: 3px !important;
+    font-weight: 500 !important;
+  }
+  
+  .place-address {
+    font-size: 10px !important;
+    color: #888 !important;
+    line-height: 1.3 !important;
+  }
+  
+  /* Loading and empty states */
+  .loading-state, .empty-state {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 16px !important;
+    color: #888 !important;
+    font-size: 11px !important;
+  }
+  
+  .loading-state {
+    gap: 6px !important;
+  }
+  
+  .spinner {
+    width: 12px !important;
+    height: 12px !important;
+    border: 1px solid rgba(0, 0, 0, 0.1) !important;
+    border-top: 1px solid #333 !important;
+    border-radius: 50% !important;
+    animation: spin 1s linear infinite !important;
+  }
+  
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+  
+  /* Main Controls Section */
+  .main-controls {
+    padding: 12px !important;
+  }
+  
+  /* Primary Actions - Top level buttons */
+  .primary-actions {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 4px !important;
+    margin-bottom: 8px !important;
+  }
+  
+  /* Add Place Form */
+  .add-place-form {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 6px !important;
+    margin-top: 6px !important;
+  }
+  
+  /* Button Styles - Back to minimal */
   .control-button {
     background: white !important;
     border: 1px solid rgba(0, 0, 0, 0.1) !important;
@@ -131,16 +263,62 @@ export const controlPanelStyles = `
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05) !important;
     margin-bottom: 4px !important;
   }
-  .control-button:hover {
+  
+  .control-button:hover:not(:disabled) {
     background: #f8f8f8 !important;
     transform: translateY(-1px) !important;
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1) !important;
   }
+  
+  .control-button:disabled {
+    opacity: 0.6 !important;
+    cursor: not-allowed !important;
+    transform: none !important;
+  }
+  
+  /* Button variants - simplified */
+  .control-button.primary {
+    background: white !important;
+    color: #1a1a1a !important;
+    border-color: rgba(0, 0, 0, 0.15) !important;
+    font-weight: 600 !important;
+  }
+  
+  .control-button.primary:hover:not(:disabled) {
+    background: #f0f0f0 !important;
+    border-color: rgba(0, 0, 0, 0.2) !important;
+  }
+  
   .control-button.active {
     background: #f0f0f0 !important;
-    border-color: rgba(0, 0, 0, 0.15) !important;
+    border-color: rgba(0, 0, 0, 0.2) !important;
     color: #000 !important;
   }
+  
+  .control-button.secondary {
+    background: #f8f8f8 !important;
+    color: #666 !important;
+    border-color: rgba(0, 0, 0, 0.08) !important;
+  }
+  
+  .control-button.secondary:hover:not(:disabled) {
+    background: #f0f0f0 !important;
+    color: #333 !important;
+  }
+  
+  .control-button.success {
+    background: #f0f8f0 !important;
+    color: #2d5f2d !important;
+    border-color: rgba(45, 95, 45, 0.2) !important;
+    font-weight: 600 !important;
+  }
+  
+  .control-button.success:hover:not(:disabled) {
+    background: #e8f5e8 !important;
+    border-color: rgba(45, 95, 45, 0.3) !important;
+  }
+  
+  /* Input Styles - minimal */
   .control-input {
     width: 100% !important;
     padding: 6px 8px !important;
@@ -151,25 +329,69 @@ export const controlPanelStyles = `
     background: white !important;
     color: #1a1a1a !important;
     box-sizing: border-box !important;
+    transition: border-color 0.2s ease !important;
   }
+  
+  .control-input:focus {
+    outline: none !important;
+    border-color: rgba(0, 0, 0, 0.2) !important;
+  }
+  
+  .control-input:disabled {
+    background: #f9f9f9 !important;
+    opacity: 0.6 !important;
+  }
+  
   .control-input::placeholder {
     color: #999 !important;
   }
-  .control-hint {
+  
+  /* Status Display - minimal */
+  .status-display {
+    padding: 6px 8px !important;
+    background: rgba(0, 0, 0, 0.03) !important;
+    border-radius: 4px !important;
     font-size: 10px !important;
-    color: #666 !important;
-    margin-bottom: 8px !important;
+    font-weight: 500 !important;
     text-align: center !important;
+    border: 1px solid rgba(0, 0, 0, 0.05) !important;
+    margin-bottom: 6px !important;
   }
-  .control-status {
-    font-size: 10px !important;
-    color: #10b981 !important;
-    margin-bottom: 8px !important;
-    text-align: center !important;
-  }
-  .control-actions {
+  
+  /* Form Actions */
+  .form-actions {
     display: flex !important;
     gap: 6px !important;
-    margin-top: 6px !important;
+    margin-top: 4px !important;
+  }
+  
+  /* Responsive adjustments */
+  @media (max-width: 640px) {
+    .places-controls {
+      width: calc(100vw - 40px) !important;
+      max-width: 280px !important;
+    }
+    
+    .places-controls.expanded {
+      transform: translateY(-150px) !important;
+    }
+  }
+  
+  /* Minimal scrollbar */
+  .places-list-section::-webkit-scrollbar {
+    width: 2px !important;
+  }
+  
+  .places-list-section::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.05) !important;
+  }
+  
+  .places-list-section::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.2) !important;
+    border-radius: 1px !important;
+  }
+  
+  .places-list-section::-webkit-scrollbar-thumb:hover {
+    background: rgba(0, 0, 0, 0.3) !important;
   }
 `;
