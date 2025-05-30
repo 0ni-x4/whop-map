@@ -73,12 +73,17 @@ async function uploadImageFromClient(staticImageUrl: string, experienceId: strin
     
     const uploadResult = await uploadResponse.json();
     console.log(`✅ Upload successful!`);
-    console.log(`📎 DirectUploadId: ${uploadResult.directUploadId}`);
+    console.log(`📄 Upload result:`, uploadResult);
+    console.log(`📎 AttachmentId: ${uploadResult.attachmentId}`);
     
     // Store attachment ID globally for forum post creation
-    (window as any).lastUploadedAttachmentId = uploadResult.directUploadId;
-    
-    return uploadResult.directUploadId;
+    if (uploadResult.attachmentId) {
+      (window as any).lastUploadedAttachmentId = uploadResult.attachmentId;
+      return uploadResult.attachmentId;
+    } else {
+      console.error(`❌ No attachmentId in response:`, uploadResult);
+      return null;
+    }
     
   } catch (error) {
     console.error(`❌ Client image upload failed:`, error);
