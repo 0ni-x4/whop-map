@@ -35,51 +35,24 @@ const createPinMarker = (color = '#dc2626') => {
 };
 
 /**
- * CLIENT-SIDE: Upload image directly from browser to Whop
- * This bypasses server-side network issues entirely
+ * Uploads image from client-side (triggered on map click for new places)
+ * This bypasses server-side Mapbox fetching issues entirely
  */
-export async function uploadImageFromClient(
-  imageUrl: string, 
-  experienceId: string
-): Promise<string | null> {
-  console.log(`🖥️ === CLIENT-SIDE IMAGE UPLOAD START ===`);
-  console.log(`🔗 Full Image URL: ${imageUrl}`);
-  console.log(`📍 Experience ID: ${experienceId}`);
+async function uploadImageFromClient(staticImageUrl: string, experienceId: string): Promise<string | null> {
+  console.log(`🌐 === CLIENT IMAGE UPLOAD START ===`);
+  console.log(`🔗 Fetching image: ${staticImageUrl}`);
   
   try {
-    // Step 1: Fetch image from Mapbox (client-side)
-    const fetchStart = Date.now();
-    console.log(`📥 Step 1: Fetching image from client...`);
-    console.log(`🌐 Fetch URL: ${imageUrl}`);
-    
-    const imageResponse = await fetch(imageUrl);
-    console.log(`📊 Fetch response status: ${imageResponse.status}`);
-    console.log(`📊 Fetch response headers:`, Object.fromEntries(imageResponse.headers.entries()));
-    
+    // Fetch image from Mapbox
+    const imageResponse = await fetch(staticImageUrl);
     if (!imageResponse.ok) {
-      console.error(`❌ Image fetch failed with status: ${imageResponse.status}`);
-      console.error(`❌ Status text: ${imageResponse.statusText}`);
       throw new Error(`Failed to fetch image: ${imageResponse.status}`);
     }
     
-    const fetchDuration = Date.now() - fetchStart;
-    console.log(`✅ Step 1 completed in ${fetchDuration}ms`);
-
-    // Step 2: Convert to blob
-    const blobStart = Date.now();
-    console.log(`🔄 Step 2: Converting to blob...`);
-    
     const imageBlob = await imageResponse.blob();
-    const blobDuration = Date.now() - blobStart;
-    console.log(`✅ Step 2 completed in ${blobDuration}ms`);
-    console.log(`📊 Blob size: ${imageBlob.size} bytes`);
-    console.log(`📊 Blob type: ${imageBlob.type}`);
-
-    // Step 3: Upload via our API with the blob
-    const uploadStart = Date.now();
-    console.log(`⬆️ Step 3: Uploading via client API...`);
-    console.log(`🎯 Upload URL: /api/experiences/${experienceId}/upload-image`);
+    console.log(`📸 Image fetched: ${imageBlob.size} bytes`);
     
+    // Upload to Whop via our API
     const uploadResponse = await fetch(`/api/experiences/${experienceId}/upload-image`, {
       method: 'POST',
       body: imageBlob,
@@ -87,40 +60,22 @@ export async function uploadImageFromClient(
         'Content-Type': 'image/jpeg',
       },
     });
-
-    console.log(`📊 Upload response status: ${uploadResponse.status}`);
-    console.log(`📊 Upload response headers:`, Object.fromEntries(uploadResponse.headers.entries()));
-
+    
     if (!uploadResponse.ok) {
-      const errorText = await uploadResponse.text();
-      console.error(`❌ Upload API failed with status: ${uploadResponse.status}`);
-      console.error(`❌ Error response: ${errorText}`);
-      throw new Error(`Upload failed: ${uploadResponse.status} - ${errorText}`);
+      throw new Error(`Upload failed: ${uploadResponse.status}`);
     }
-
+    
     const uploadResult = await uploadResponse.json();
-    const uploadDuration = Date.now() - uploadStart;
-    const totalDuration = Date.now() - fetchStart;
-
-    console.log(`📄 Upload API response:`, uploadResult);
-
-    if (uploadResult.success && uploadResult.attachmentId) {
-      console.log(`✅ Step 3 completed in ${uploadDuration}ms`);
-      console.log(`🎯 === CLIENT-SIDE UPLOAD COMPLETE ===`);
-      console.log(`⏱️ TOTAL TIME: ${totalDuration}ms`);
-      console.log(`📎 Attachment ID: ${uploadResult.attachmentId}`);
-      return uploadResult.attachmentId;
-    } else {
-      console.error(`❌ Upload result missing success or attachmentId:`, uploadResult);
-      console.error(`❌ Success: ${uploadResult.success}, AttachmentId: ${uploadResult.attachmentId}`);
-      return null;
-    }
-
+    console.log(`✅ Upload successful!`);
+    console.log(`📎 DirectUploadId: ${uploadResult.directUploadId}`);
+    
+    // Store attachment ID globally for forum post creation
+    (window as any).lastUploadedAttachmentId = uploadResult.directUploadId;
+    
+    return uploadResult.directUploadId;
+    
   } catch (error) {
-    console.error(`❌ Client-side image upload failed:`, error);
-    console.error(`❌ Error type: ${error instanceof Error ? error.constructor.name : typeof error}`);
-    console.error(`❌ Error message: ${error instanceof Error ? error.message : String(error)}`);
-    console.error(`❌ Error stack:`, error instanceof Error ? error.stack : 'No stack trace');
+    console.error(`❌ Client image upload failed:`, error);
     return null;
   }
 }

@@ -109,7 +109,7 @@ async function postHandler(request: Request): Promise<NextResponse> {
     }
 
     // Parse request body
-    const { name, description, latitude, longitude, address, category, attachmentId } =
+    const { name, description, latitude, longitude, address, category, attachmentId, skipForumPost } =
       await request.json();
 
     // Validate required fields
@@ -120,8 +120,9 @@ async function postHandler(request: Request): Promise<NextResponse> {
       );
     }
 
-    console.log(`🔄 Creating place: ${name}`);
+    console.log(`📝 Place data: ${name} at ${latitude}, ${longitude}`);
     console.log(`📎 Pre-uploaded attachment: ${attachmentId ? attachmentId.substring(0, 20) + '...' : 'None'}`);
+    console.log(`🚫 Skip forum post: ${skipForumPost ? 'YES' : 'NO'}`);
 
     // OPTIMIZATION: Create the place first (fast operation)
     const place = await createPlace({
@@ -137,37 +138,42 @@ async function postHandler(request: Request): Promise<NextResponse> {
     const duration = Date.now() - startTime;
     console.log(`✅ Place created in ${duration}ms: ${place.id}`);
 
-    // OPTIMIZATION: Get bizId from experience data for forum post
-    try {
-      const experienceData = await whopApi.getExperience({ experienceId });
-      const bizId = experienceData.experience.company.id;
-      
-      // Fire and forget forum post creation with pre-uploaded attachment
-      setImmediate(() => {
-        if (attachmentId) {
-          console.log(`🚀 Creating forum post with pre-uploaded attachment: ${attachmentId}`);
-          createPlaceAnnouncementPostWithAttachment({
-            experienceId,
-            placeName: place.name,
-            placeDescription: place.description || undefined,
-            latitude: place.latitude,
-            longitude: place.longitude,
-            address: place.address || undefined,
-            category: place.category || undefined,
-            attachmentId,
-          }).catch((error: any) => {
-            console.error("Background forum post creation with attachment failed:", error);
-          });
-        } else {
-          console.log(`🚀 Creating forum post without attachment (client-side upload failed)`);
-          // Skip forum post creation if no attachment - the client-side approach should always provide one
-          console.log(`⚠️ Skipping forum post creation - no attachment provided`);
-        }
-      });
-      
-      console.log(`🔄 Forum post creation started in background`);
-    } catch (error) {
-      console.error("Failed to get experience data for forum post:", error);
+    // Only create forum post if not skipped by client
+    if (!skipForumPost) {
+      // OPTIMIZATION: Get bizId from experience data for forum post
+      try {
+        const experienceData = await whopApi.getExperience({ experienceId });
+        const bizId = experienceData.experience.company.id;
+        
+        // Fire and forget forum post creation with pre-uploaded attachment
+        setImmediate(() => {
+          if (attachmentId) {
+            console.log(`🚀 Creating forum post with pre-uploaded attachment: ${attachmentId}`);
+            createPlaceAnnouncementPostWithAttachment({
+              experienceId,
+              placeName: place.name,
+              placeDescription: place.description || undefined,
+              latitude: place.latitude,
+              longitude: place.longitude,
+              address: place.address || undefined,
+              category: place.category || undefined,
+              attachmentId,
+            }).catch((error: any) => {
+              console.error("Background forum post creation with attachment failed:", error);
+            });
+          } else {
+            console.log(`🚀 Creating forum post without attachment (client-side upload failed)`);
+            // Skip forum post creation if no attachment - the client-side approach should always provide one
+            console.log(`⚠️ Skipping forum post creation - no attachment provided`);
+          }
+        });
+        
+        console.log(`🔄 Forum post creation started in background`);
+      } catch (error) {
+        console.error("Failed to get experience data for forum post:", error);
+      }
+    } else {
+      console.log(`⏭️ Forum post creation skipped (client will handle it)`);
     }
 
     // Return immediately with the created place
@@ -175,7 +181,7 @@ async function postHandler(request: Request): Promise<NextResponse> {
       ...place,
       meta: {
         createdIn: duration,
-        forumPostQueued: true,
+        forumPostQueued: !skipForumPost,
         hasAttachment: !!attachmentId
       }
     });

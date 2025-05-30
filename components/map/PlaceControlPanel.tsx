@@ -4,7 +4,6 @@ import { useState } from 'react';
 import type { NewPlacePosition } from './types';
 import { geocodeAddress } from './utils';
 import { controlPanelStyles } from './styles';
-import { uploadImageFromClient } from './MapContainer';
 
 interface PlaceControlPanelProps {
   experienceId: string;
@@ -38,6 +37,109 @@ function getMapboxStaticImageUrl(lat: number, lng: number): string | null {
   } catch (error) {
     console.error("Error generating Mapbox Static image URL:", error);
     return null;
+  }
+}
+
+/**
+ * Uploads image from client-side (triggered on map click for new places)
+ * This bypasses server-side Mapbox fetching issues entirely
+ */
+async function uploadImageFromClient(staticImageUrl: string, experienceId: string): Promise<string | null> {
+  console.log(`🌐 === CLIENT IMAGE UPLOAD START ===`);
+  console.log(`🔗 Fetching image: ${staticImageUrl}`);
+  
+  try {
+    // Fetch image from Mapbox
+    const imageResponse = await fetch(staticImageUrl);
+    if (!imageResponse.ok) {
+      throw new Error(`Failed to fetch image: ${imageResponse.status}`);
+    }
+    
+    const imageBlob = await imageResponse.blob();
+    console.log(`📸 Image fetched: ${imageBlob.size} bytes`);
+    
+    // Upload to Whop via our API
+    const uploadResponse = await fetch(`/api/experiences/${experienceId}/upload-image`, {
+      method: 'POST',
+      body: imageBlob,
+      headers: {
+        'Content-Type': 'image/jpeg',
+      },
+    });
+    
+    if (!uploadResponse.ok) {
+      throw new Error(`Upload failed: ${uploadResponse.status}`);
+    }
+    
+    const uploadResult = await uploadResponse.json();
+    console.log(`✅ Upload successful!`);
+    console.log(`📎 DirectUploadId: ${uploadResult.directUploadId}`);
+    
+    // Store attachment ID globally for forum post creation
+    (window as any).lastUploadedAttachmentId = uploadResult.directUploadId;
+    
+    return uploadResult.directUploadId;
+    
+  } catch (error) {
+    console.error(`❌ Client image upload failed:`, error);
+    return null;
+  }
+}
+
+/**
+ * CLIENT-SIDE: Create forum post with Whop API
+ * This bypasses server-side timeout issues entirely
+ */
+async function createForumPostFromClient(
+  experienceId: string,
+  placeName: string,
+  placeDescription: string | undefined,
+  address: string | undefined,
+  category: string | undefined,
+  attachmentId: string
+): Promise<boolean> {
+  console.log(`🌐 === CLIENT-SIDE FORUM POST CREATION START ===`);
+  console.log(`📍 Place: ${placeName}`);
+  console.log(`📎 Attachment: ${attachmentId}`);
+  
+  try {
+    // Step 1: Create forum post via new API endpoint
+    const forumStart = Date.now();
+    console.log(`📤 Step 1: Creating forum post via client API...`);
+    
+    const forumResponse = await fetch(`/api/experiences/${experienceId}/create-forum-post`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        placeName,
+        placeDescription,
+        address,
+        category,
+        attachmentId,
+      }),
+    });
+
+    const forumDuration = Date.now() - forumStart;
+    console.log(`📊 Forum post API response: ${forumResponse.status}`);
+
+    if (!forumResponse.ok) {
+      const errorText = await forumResponse.text();
+      console.error(`❌ Forum post creation failed: ${forumResponse.status} - ${errorText}`);
+      return false;
+    }
+
+    const forumResult = await forumResponse.json();
+    console.log(`✅ Step 1 completed in ${forumDuration}ms - Forum post created!`);
+    console.log(`📝 Post ID: ${forumResult.postId}`);
+    console.log(`🎯 === CLIENT-SIDE FORUM POST COMPLETE ===`);
+    
+    return true;
+
+  } catch (error) {
+    console.error(`❌ Client-side forum post creation failed:`, error);
+    return false;
   }
 }
 
@@ -77,20 +179,28 @@ export default function PlaceControlPanel({
   };
 
   /**
-   * CLIENT-SIDE PLACE CREATION with image upload
-   * This handles the entire flow on the client side for better performance
+   * Submits new place to the API and creates forum post
+   * All operations now happen client-side to avoid Vercel timeouts
    */
   const handleAddPlace = async () => {
     if (!newPlacePosition || !newPlaceName.trim()) return;
 
-    setIsCreatingPlace(true);
-    console.log(`🚀 === CLIENT-SIDE PLACE CREATION START ===`);
-    
+    const newPlace = {
+      name: newPlaceName,
+      description: newPlaceDescription || null,
+      latitude: newPlacePosition.lat,
+      longitude: newPlacePosition.lng,
+      address: newPlaceAddress || null,
+      category: newPlaceCategory || null,
+    };
+
     try {
-      // Step 1: Try to upload image from client first (optional)
+      console.log(`🔄 Starting complete place creation flow: ${newPlaceName}`);
+      
+      // Step 1: Upload image first to get attachment ID
       let attachmentId: string | null = null;
       
-      console.log(`📸 Step 1: Attempting client-side image upload...`);
+      console.log(`📸 Step 1: Attempting image upload...`);
       const imageStart = Date.now();
       
       const staticImageUrl = getMapboxStaticImageUrl(
@@ -98,16 +208,16 @@ export default function PlaceControlPanel({
         newPlacePosition.lng
       );
       
-      console.log(`🗺️ Generated Mapbox URL: ${staticImageUrl}`);
-      
       if (staticImageUrl) {
         try {
-          console.log(`🔄 Starting uploadImageFromClient...`);
+          console.log(`🗺️ Generated Mapbox URL: ${staticImageUrl}`);
           attachmentId = await uploadImageFromClient(staticImageUrl, experienceId);
           const imageDuration = Date.now() - imageStart;
           
           if (attachmentId) {
             console.log(`✅ Step 1 completed in ${imageDuration}ms - Image uploaded: ${attachmentId}`);
+            // Store globally for forum post creation
+            (window as any).lastUploadedAttachmentId = attachmentId;
           } else {
             console.log(`⚠️ Step 1 completed in ${imageDuration}ms - Image upload returned null`);
           }
@@ -119,53 +229,62 @@ export default function PlaceControlPanel({
         console.log(`⚠️ Step 1 skipped - No Mapbox token or URL generation failed`);
       }
 
-      // Step 2: Create place with optional attachment ID
+      // Step 2: Create the place (no forum post on server side)
       console.log(`🏗️ Step 2: Creating place record...`);
-      console.log(`📎 Attachment ID to send: ${attachmentId || 'None'}`);
       const placeStart = Date.now();
-
-      const newPlace = {
-        name: newPlaceName,
-        description: newPlaceDescription || null,
-        latitude: newPlacePosition.lat,
-        longitude: newPlacePosition.lng,
-        address: newPlaceAddress || null,
-        category: newPlaceCategory || null,
-        attachmentId: attachmentId, // Pass the pre-uploaded image
-      };
-
-      console.log(`📤 Sending place data:`, newPlace);
-
+      
       const response = await fetch(`/api/experiences/${experienceId}/places`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(newPlace),
+        body: JSON.stringify({
+          ...newPlace,
+          skipForumPost: true, // Tell server to skip forum post creation
+        }),
       });
 
       if (!response.ok) {
-        const errorText = await response.text();
-        console.error(`❌ Place creation failed: ${response.status} - ${errorText}`);
-        throw new Error(`Failed to add place: ${response.status}`);
+        throw new Error("Failed to add place");
       }
 
-      const result = await response.json();
+      const createdPlace = await response.json();
       const placeDuration = Date.now() - placeStart;
-      console.log(`✅ Step 2 completed in ${placeDuration}ms - Place created: ${result.id}`);
-      console.log(`📄 Server response:`, result);
+      console.log(`✅ Step 2 completed in ${placeDuration}ms - Place created: ${createdPlace.id}`);
 
-      console.log(`🎯 === CLIENT-SIDE PLACE CREATION COMPLETE ===`);
+      // Step 3: Create forum post (client-side)
+      let forumSuccess = false;
       
+      if (attachmentId) {
+        console.log(`📤 Step 3: Creating forum post with attachment...`);
+        const forumStart = Date.now();
+        
+        forumSuccess = await createForumPostFromClient(
+          experienceId,
+          newPlaceName,
+          newPlaceDescription || undefined,
+          newPlaceAddress || undefined,
+          newPlaceCategory || undefined,
+          attachmentId
+        );
+        
+        const forumDuration = Date.now() - forumStart;
+        console.log(`${forumSuccess ? '✅' : '❌'} Step 3 completed in ${forumDuration}ms`);
+      } else {
+        console.warn(`⚠️ Step 3 skipped - No attachment ID available`);
+      }
+
+      if (forumSuccess) {
+        console.log(`🎉 Complete flow successful: Place + Forum post created!`);
+      } else {
+        console.log(`✅ Place created successfully (forum post skipped)`);
+      }
+
       // Reset form and refresh page to show new place
       resetForm();
       window.location.reload();
-
     } catch (error) {
-      console.error("❌ Error adding place:", error);
-      alert("Failed to add place. Please try again.");
-    } finally {
-      setIsCreatingPlace(false);
+      console.error("Error in complete place creation flow:", error);
     }
   };
 
