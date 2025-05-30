@@ -1,5 +1,6 @@
 import { whopApi } from "./whop-api";
 import { PrismaClient } from "@prisma/client";
+import { maybeSimulateSlow } from "./timeout-test";
 
 const prisma = new PrismaClient();
 
@@ -190,41 +191,80 @@ export async function getMapboxStaticImage(lat: number, lng: number, name: strin
 }
 
 /**
- * OPTIMIZED: Faster image upload with timeout controls and compression
+ * OPTIMIZED: Faster image upload with aggressive timeout controls for Vercel
  */
 export async function uploadImageToWhop(imageUrl: string, userId: string, bizId: string): Promise<string | null> {
+  const startTime = Date.now();
+  console.log(`⬆️ === IMAGE UPLOAD START ===`);
+  console.log(`🔗 Image URL: ${imageUrl.substring(0, 80)}...`);
+  
   try {
-    // OPTIMIZATION: Set strict timeout limits
-    const FETCH_TIMEOUT = 10000; // 10 seconds for image fetch
-    const UPLOAD_TIMEOUT = 15000; // 15 seconds for upload
+    // OPTIMIZATION: Much more aggressive timeout limits for Vercel
+    const FETCH_TIMEOUT = 5000; // 5 seconds for image fetch (was 10s)
+    const UPLOAD_TIMEOUT = 8000; // 8 seconds for upload (was 15s)
     
-    console.log(`🔄 Fetching optimized image from: ${imageUrl}`);
+    console.log(`⚙️ Timeouts: Fetch=${FETCH_TIMEOUT}ms, Upload=${UPLOAD_TIMEOUT}ms`);
     
-    // OPTIMIZATION: Fetch with timeout control
-    const imageResponse = await Promise.race([
-      fetch(imageUrl),
-      new Promise<Response>((_, reject) => 
-        setTimeout(() => reject(new Error('Image fetch timeout')), FETCH_TIMEOUT)
-      )
-    ]);
+    // Step A: Fetch image from Mapbox
+    const fetchStart = Date.now();
+    console.log(`📥 Step A: Fetching image from Mapbox...`);
+    
+    // OPTIMIZATION: Fetch with very aggressive timeout control
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
+    
+    const imageResponse = await maybeSimulateSlow(
+      () => fetch(imageUrl, { 
+        signal: controller.signal,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (compatible; WhopApp/1.0)',
+        }
+      }),
+      8000, // 8 second delay in simulation mode
+      "Mapbox image fetch"
+    );
+
+    clearTimeout(timeoutId);
+    const fetchDuration = Date.now() - fetchStart;
 
     if (!imageResponse.ok) {
       throw new Error(`Failed to fetch image: ${imageResponse.status}`);
     }
 
-    const imageBlob = await imageResponse.blob();
-    console.log(`📁 Image fetched: ${imageBlob.size} bytes (optimized size)`);
+    console.log(`✅ Step A completed in ${fetchDuration}ms - Status: ${imageResponse.status}`);
+
+    // Step B: Convert to blob
+    const blobStart = Date.now();
+    console.log(`🔄 Step B: Converting response to blob...`);
     
-    // OPTIMIZATION: Skip upload if image is too large (>500KB)
-    if (imageBlob.size > 500000) {
-      console.warn(`⚠️ Image too large (${imageBlob.size} bytes), skipping upload`);
+    const imageBlob = await imageResponse.blob();
+    const blobDuration = Date.now() - blobStart;
+    
+    console.log(`✅ Step B completed in ${blobDuration}ms - Size: ${imageBlob.size} bytes`);
+    
+    // Step C: Size check
+    const sizeCheckStart = Date.now();
+    console.log(`🔍 Step C: Checking file size...`);
+    
+    // OPTIMIZATION: Skip upload if image is too large (>300KB for faster processing)
+    if (imageBlob.size > 300000) {
+      const sizeCheckDuration = Date.now() - sizeCheckStart;
+      console.warn(`⚠️ Step C completed in ${sizeCheckDuration}ms - Image too large (${imageBlob.size} bytes), skipping upload`);
       return null;
     }
     
-    console.log(`🔄 Uploading to Whop via API route...`);
+    const sizeCheckDuration = Date.now() - sizeCheckStart;
+    console.log(`✅ Step C completed in ${sizeCheckDuration}ms - Size OK (${imageBlob.size} bytes)`);
     
-    // OPTIMIZATION: Upload with timeout control
+    // Step D: Upload to Whop
+    const uploadStart = Date.now();
+    console.log(`🚀 Step D: Uploading to Whop via API route...`);
+    
+    // OPTIMIZATION: Upload with aggressive timeout control
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    const uploadController = new AbortController();
+    const uploadTimeoutId = setTimeout(() => uploadController.abort(), UPLOAD_TIMEOUT);
+    
     const uploadResponse = await Promise.race([
       fetch(`${baseUrl}/api/upload`, {
         method: 'POST',
@@ -234,28 +274,62 @@ export async function uploadImageToWhop(imageUrl: string, userId: string, bizId:
           'x-user-id': userId,
           'x-biz-id': bizId,
         },
+        signal: uploadController.signal,
       }),
       new Promise<Response>((_, reject) => 
         setTimeout(() => reject(new Error('Upload timeout')), UPLOAD_TIMEOUT)
       )
     ]);
 
+    clearTimeout(uploadTimeoutId);
+    const uploadDuration = Date.now() - uploadStart;
+
     if (!uploadResponse.ok) {
       const errorText = await uploadResponse.text();
       throw new Error(`Upload API failed: ${uploadResponse.status} - ${errorText}`);
     }
 
+    console.log(`✅ Step D completed in ${uploadDuration}ms - Upload response: ${uploadResponse.status}`);
+
+    // Step E: Parse response
+    const parseStart = Date.now();
+    console.log(`📋 Step E: Parsing upload response...`);
+    
     const uploadResult = await uploadResponse.json();
+    const parseDuration = Date.now() - parseStart;
+    const totalDuration = Date.now() - startTime;
 
     if (uploadResult.success && uploadResult.attachmentId) {
-      console.log(`✅ Image uploaded successfully! DirectUploadId: ${uploadResult.attachmentId}`);
+      console.log(`✅ Step E completed in ${parseDuration}ms - Success!`);
+      console.log(`🎯 === IMAGE UPLOAD COMPLETE ===`);
+      console.log(`⏱️ TOTAL TIME: ${totalDuration}ms`);
+      console.log(`📊 BREAKDOWN:`);
+      console.log(`   - Step A (Fetch): ${fetchDuration}ms`);
+      console.log(`   - Step B (Blob): ${blobDuration}ms`);
+      console.log(`   - Step C (Size check): ${sizeCheckDuration}ms`);
+      console.log(`   - Step D (Upload): ${uploadDuration}ms`);
+      console.log(`   - Step E (Parse): ${parseDuration}ms`);
+      console.log(`📎 Attachment ID: ${uploadResult.attachmentId}`);
       return uploadResult.attachmentId;
     } else {
-      console.error("Upload result missing attachmentId:", uploadResult);
+      console.error(`❌ Step E completed in ${parseDuration}ms - Upload result missing attachmentId:`, uploadResult);
       return null;
     }
   } catch (error) {
-    console.error("Error uploading image to Whop:", error);
+    const totalDuration = Date.now() - startTime;
+    console.error(`❌ Image upload failed after ${totalDuration}ms:`, error);
+    
+    // OPTIMIZATION: Log specific error types for debugging
+    if (error instanceof Error) {
+      if (error.name === 'AbortError') {
+        console.error("⚠️ Image upload aborted due to timeout");
+      } else if (error.message.includes('fetch')) {
+        console.error("⚠️ Network error during image fetch");
+      } else if (error.message.includes('timeout')) {
+        console.error("⚠️ Timeout during image processing");
+      }
+    }
+    
     return null;
   }
 }
@@ -284,17 +358,30 @@ export async function createPlaceAnnouncementPost({
   bizId: string;
   skipImageUpload?: boolean;
 }) {
+  const totalStartTime = Date.now();
+  console.log(`🚀 === FORUM POST CREATION START for "${place.name}" ===`);
+  
   try {
-    // Get experience details for URL generation
+    // Step 1: Get experience details
+    const step1Start = Date.now();
+    console.log(`📋 Step 1: Getting experience details...`);
+    
     const experience = await prisma.experience.findUnique({
       where: { id: experienceId },
     });
 
     if (!experience) {
-      console.error("Experience not found for URL generation");
+      console.error("❌ Experience not found for URL generation");
       return;
     }
+    
+    const step1Duration = Date.now() - step1Start;
+    console.log(`✅ Step 1 completed in ${step1Duration}ms - Experience: ${experience.title}`);
 
+    // Step 2: Generate URL
+    const step2Start = Date.now();
+    console.log(`🔗 Step 2: Generating map URL...`);
+    
     // Helper function to make strings URL-friendly
     const urlFriendly = (str: string) => 
       str.toLowerCase()
@@ -308,43 +395,70 @@ export async function createPlaceAnnouncementPost({
     const experienceTitleUrl = urlFriendly(experience.title);
     const expIdWithoutPrefix = experienceId.slice(4);
     const mapUrl = `https://whop.com/${bizNameUrl}/${experienceTitleUrl}-${expIdWithoutPrefix}/app`;
+    
+    const step2Duration = Date.now() - step2Start;
+    console.log(`✅ Step 2 completed in ${step2Duration}ms - URL: ${mapUrl}`);
 
-    // OPTIMIZATION: Handle image upload strategy
+    // Step 3: Image handling
     let attachmentId: string | null = null;
     let staticImageUrl: string | null = null;
+    let imageStepDuration = 0;
 
     if (!skipImageUpload) {
-      // Get optimized Mapbox Static image URL
+      const imageStartTime = Date.now();
+      console.log(`📸 Step 3: Starting image process...`);
+      
+      // Sub-step 3a: Generate Mapbox URL
+      const mapboxUrlStart = Date.now();
+      console.log(`🗺️ Step 3a: Generating Mapbox Static image URL...`);
+      
       staticImageUrl = await getMapboxStaticImage(
         place.latitude,
         place.longitude,
         place.name
       );
+      
+      const mapboxUrlDuration = Date.now() - mapboxUrlStart;
+      console.log(`✅ Step 3a completed in ${mapboxUrlDuration}ms - ${staticImageUrl ? 'URL generated' : 'Failed to generate URL'}`);
 
-      // OPTIMIZATION: Try fast image upload with timeout
+      // Sub-step 3b: Upload image
       if (staticImageUrl) {
-        console.log(`🔄 Attempting fast image upload for place: ${place.name}`);
+        const uploadStart = Date.now();
+        console.log(`⬆️ Step 3b: Starting image upload with 15s timeout...`);
         
         try {
-          // OPTIMIZATION: Race against timeout for entire image upload process
+          // OPTIMIZATION: Race against aggressive timeout for entire image upload process
           attachmentId = await Promise.race([
             uploadImageToWhop(staticImageUrl, userId, bizId),
             new Promise<string | null>((_, reject) => 
-              setTimeout(() => reject(new Error('Total image process timeout')), 25000) // 25 seconds max
+              setTimeout(() => reject(new Error('Total image process timeout')), 15000) // 15 seconds max (was 25s)
             )
           ]);
           
+          const uploadDuration = Date.now() - uploadStart;
+          
           if (attachmentId) {
-            console.log(`✅ Fast image upload successful: ${attachmentId}`);
+            console.log(`✅ Step 3b completed in ${uploadDuration}ms - Upload successful: ${attachmentId}`);
+          } else {
+            console.log(`⚠️ Step 3b completed in ${uploadDuration}ms - Upload failed (no attachment ID returned)`);
           }
         } catch (timeoutError) {
-          console.log(`⚠️ Image upload timeout, proceeding without attachment`);
+          const uploadDuration = Date.now() - uploadStart;
+          console.log(`⚠️ Step 3b timed out after ${uploadDuration}ms - Proceeding without image attachment`);
           attachmentId = null;
         }
       }
+      
+      imageStepDuration = Date.now() - imageStartTime;
+      console.log(`📸 Step 3 total duration: ${imageStepDuration}ms - ${attachmentId ? 'With attachment' : 'No attachment'}`);
+    } else {
+      console.log(`⏭️ Step 3: Skipped image upload (skipImageUpload=true)`);
     }
 
-    // OPTIMIZATION: Always create forum post, even if image upload fails
+    // Step 4: Create forum content
+    const step4Start = Date.now();
+    console.log(`📝 Step 4: Creating forum post content...`);
+    
     const addressText = place.address 
       ? `Address: ${place.address}`
       : `Coordinates: ${place.latitude.toFixed(4)}, ${place.longitude.toFixed(4)}`;
@@ -367,8 +481,14 @@ ${mapUrlText}`;
     } else if (staticImageUrl && !skipImageUpload) {
       postContent += `\n📸 **Location Preview**: ${staticImageUrl}`;
     }
+    
+    const step4Duration = Date.now() - step4Start;
+    console.log(`✅ Step 4 completed in ${step4Duration}ms - Content prepared (${postContent.length} chars)`);
 
-    // OPTIMIZATION: Create forum first (fast operation)
+    // Step 5: Create/find forum
+    const step5Start = Date.now();
+    console.log(`🏛️ Step 5: Creating/finding Places Forum...`);
+    
     let forumId: string | null = null;
     try {
       const forumResult = await whopApi
@@ -382,18 +502,23 @@ ${mapUrlText}`;
         });
       
       forumId = forumResult.createForum?.id || experienceId;
-      console.log(`✅ Forum ready: ${forumId}`);
+      const step5Duration = Date.now() - step5Start;
+      console.log(`✅ Step 5 completed in ${step5Duration}ms - Forum ready: ${forumId}`);
     } catch (error: any) {
-      console.log("Using experienceId as forumId fallback");
+      const step5Duration = Date.now() - step5Start;
+      console.log(`⚠️ Step 5 completed in ${step5Duration}ms - Using experienceId as forumId fallback`);
       forumId = experienceId;
     }
 
     if (!forumId) {
-      console.error("Could not create or find forum");
+      console.error("❌ Could not create or find forum - aborting");
       return;
     }
 
-    // Prepare forum post input
+    // Step 6: Prepare forum post
+    const step6Start = Date.now();
+    console.log(`🛠️ Step 6: Preparing forum post input...`);
+    
     const forumPostInput: any = {
       forumExperienceId: forumId,
       title: `📍 New Place Added: ${place.name}`,
@@ -408,18 +533,27 @@ ${mapUrlText}`;
           directUploadId: attachmentId,
         },
       ];
-      console.log(`✅ Including image attachment: ${attachmentId}`);
+      console.log(`📎 Including image attachment: ${attachmentId}`);
     }
+    
+    const step6Duration = Date.now() - step6Start;
+    console.log(`✅ Step 6 completed in ${step6Duration}ms - Post input prepared`);
 
-    // Create the forum post
+    // Step 7: Create forum post
+    const step7Start = Date.now();
+    console.log(`📤 Step 7: Creating forum post...`);
+    
     const postResult = await whopApi
       .withCompany(bizId)
       .createForumPost({
         input: forumPostInput,
       });
 
+    const step7Duration = Date.now() - step7Start;
+    const totalDuration = Date.now() - totalStartTime;
+
     if (postResult.createForumPost) {
-      console.log(`✅ Forum post created for place: ${place.name}`);
+      console.log(`✅ Step 7 completed in ${step7Duration}ms - Forum post created!`);
       console.log(`📝 Post ID: ${postResult.createForumPost.id}`);
       
       if (attachmentId) {
@@ -429,10 +563,24 @@ ${mapUrlText}`;
       } else {
         console.log(`📝 Text-only post (no image)`);
       }
+      
+      console.log(`🎯 === FORUM POST CREATION COMPLETE ===`);
+      console.log(`⏱️ TOTAL TIME: ${totalDuration}ms`);
+      console.log(`📊 BREAKDOWN:`);
+      console.log(`   - Step 1 (Experience): ${step1Duration}ms`);
+      console.log(`   - Step 2 (URL): ${step2Duration}ms`);
+      console.log(`   - Step 3 (Image): ${imageStepDuration}ms`);
+      console.log(`   - Step 4 (Content): ${step4Duration}ms`);
+      console.log(`   - Step 5 (Forum): ${Date.now() - step5Start}ms`);
+      console.log(`   - Step 6 (Prepare): ${step6Duration}ms`);
+      console.log(`   - Step 7 (Post): ${step7Duration}ms`);
+    } else {
+      console.error(`❌ Step 7 failed in ${step7Duration}ms - No forum post created`);
     }
 
   } catch (error) {
-    console.error("Error creating place announcement post:", error);
+    const totalDuration = Date.now() - totalStartTime;
+    console.error(`❌ Forum post creation failed after ${totalDuration}ms:`, error);
     
     // OPTIMIZATION: Always provide fallback notification
     console.log(`=== FALLBACK: New Place Added ===`);

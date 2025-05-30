@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { verifyUserToken, whopApi } from "@/lib/whop-api";
 import { headers } from "next/headers";
 import { createPlace, getPlaces, createPlaceAnnouncementPost } from "@/lib/helpers";
+import { withAdvancedTimeout } from "@/lib/timeout-simulator";
 
 // OPTIMIZATION: Set timeout for Vercel
 export const maxDuration = 30;
@@ -61,8 +62,10 @@ export async function GET(request: Request) {
  * OPTIMIZED: POST /api/experiences/[experienceId]/places
  * Creates a new place with async forum post creation
  * Only available to admin users
+ * 
+ * NOW WITH VERCEL TIMEOUT SIMULATION
  */
-export async function POST(request: Request) {
+async function postHandler(request: Request): Promise<NextResponse> {
   const startTime = Date.now();
   
   try {
@@ -145,9 +148,20 @@ export async function POST(request: Request) {
           experienceId,
           userId: userToken.userId,
           bizId,
-          skipImageUpload: false, // Allow image upload in background
+          skipImageUpload: false, // Try images but with aggressive timeouts
         }).catch(error => {
           console.error("Background forum post creation failed:", error);
+          
+          // FALLBACK: Create text-only post if image upload fails
+          createPlaceAnnouncementPost({
+            place,
+            experienceId,
+            userId: userToken.userId,
+            bizId,
+            skipImageUpload: true, // Skip images on retry
+          }).catch(retryError => {
+            console.error("Fallback forum post creation also failed:", retryError);
+          });
         });
       });
       
@@ -173,4 +187,11 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
-} 
+}
+
+// Wrap POST handler with Vercel timeout simulation
+export const POST = withAdvancedTimeout(postHandler, {
+  timeoutMs: 30000,     // 30 second Vercel limit
+  warningMs: 20000,     // Warn at 20 seconds  
+  progressInterval: 5000 // Log progress every 5 seconds
+}); 
