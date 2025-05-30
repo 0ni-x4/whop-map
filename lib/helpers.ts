@@ -335,6 +335,37 @@ export async function uploadImageToWhop(imageUrl: string, userId: string, bizId:
 }
 
 /**
+ * Timeout wrapper for any async operation
+ */
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, operation: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`${operation} timed out after ${timeoutMs}ms`)), timeoutMs)
+    )
+  ]);
+}
+
+/**
+ * Resilient Whop API call wrapper
+ */
+async function resilientWhopCall<T>(
+  apiCall: () => Promise<T>, 
+  operation: string, 
+  timeoutMs: number = 3000
+): Promise<T | null> {
+  try {
+    console.log(`🔄 Attempting ${operation} (timeout: ${timeoutMs}ms)...`);
+    const result = await withTimeout(apiCall(), timeoutMs, operation);
+    console.log(`✅ ${operation} succeeded`);
+    return result;
+  } catch (error) {
+    console.error(`❌ ${operation} failed:`, error);
+    return null;
+  }
+}
+
+/**
  * OPTIMIZED: Creates forum post with optional async image upload
  */
 export async function createPlaceAnnouncementPost({
@@ -611,211 +642,182 @@ ${mapUrlText}`;
  * This version accepts an attachment that was already uploaded from the client
  */
 export async function createPlaceAnnouncementPostWithAttachment({
-  place,
   experienceId,
-  userId,
-  bizId,
-  attachmentId = null, // Pre-uploaded attachment ID from client
+  placeName,
+  placeDescription,
+  latitude,
+  longitude,
+  address,
+  category,
+  attachmentId,
 }: {
-  place: {
-    id: string;
-    name: string;
-    address?: string | null;
-    description?: string | null;
-    latitude: number;
-    longitude: number;
-    category?: string | null;
-  };
   experienceId: string;
-  userId: string;
-  bizId: string;
-  attachmentId?: string | null;
+  placeName: string;
+  placeDescription?: string;
+  latitude: number;
+  longitude: number;
+  address?: string;
+  category?: string;
+  attachmentId: string;
 }) {
-  const totalStartTime = Date.now();
-  console.log(`🚀 === FORUM POST CREATION START for "${place.name}" (with attachment: ${!!attachmentId}) ===`);
-  
+  const startTime = Date.now();
+  console.log(`🚀 === FORUM POST CREATION START for "${placeName}" (with attachment: true) ===`);
+
   try {
-    // Step 1: Get experience details
+    // Step 1: Get experience details with timeout
     const step1Start = Date.now();
     console.log(`📋 Step 1: Getting experience details...`);
     
-    const experience = await prisma.experience.findUnique({
-      where: { id: experienceId },
-    });
+    const whopExperience = await resilientWhopCall(
+      () => whopApi.getExperience({ experienceId }),
+      "getExperience",
+      3000 // 3 second timeout
+    );
 
-    if (!experience) {
-      console.error("❌ Experience not found for URL generation");
-      return;
+    if (!whopExperience) {
+      console.error(`❌ Step 1 failed - Cannot get experience details, skipping forum post`);
+      return { success: false, reason: "Experience details timeout" };
     }
-    
-    const step1Duration = Date.now() - step1Start;
-    console.log(`✅ Step 1 completed in ${step1Duration}ms - Experience: ${experience.title}`);
 
-    // Step 2: Generate URL
+    const step1Duration = Date.now() - step1Start;
+    console.log(`✅ Step 1 completed in ${step1Duration}ms - Experience: ${whopExperience.experience?.name || 'Unknown'}`);
+
+    // Step 2: Generate map URL
     const step2Start = Date.now();
     console.log(`🔗 Step 2: Generating map URL...`);
     
-    // Helper function to make strings URL-friendly
-    const urlFriendly = (str: string) => 
-      str.toLowerCase()
-         .replace(/\s+/g, '-')
-         .replace(/[^a-z0-9-]/g, '')
-         .replace(/-+/g, '-')
-         .replace(/^-|-$/g, '');
-
-    // Create Whop public URL format
-    const bizNameUrl = urlFriendly(experience.bizName);
-    const experienceTitleUrl = urlFriendly(experience.title);
-    const expIdWithoutPrefix = experienceId.slice(4);
-    const mapUrl = `https://whop.com/${bizNameUrl}/${experienceTitleUrl}-${expIdWithoutPrefix}/app`;
-    
+    const mapUrl = `${process.env.NEXT_PUBLIC_APP_URL}/experiences/${experienceId}`;
     const step2Duration = Date.now() - step2Start;
     console.log(`✅ Step 2 completed in ${step2Duration}ms - URL: ${mapUrl}`);
 
-    // Step 3: Create forum content
+    // Step 3: Create forum post content
     const step3Start = Date.now();
     console.log(`📝 Step 3: Creating forum post content...`);
     
-    const addressText = place.address 
-      ? `Address: ${place.address}`
-      : `Coordinates: ${place.latitude.toFixed(4)}, ${place.longitude.toFixed(4)}`;
+    const content = `📍 **New Place Added: ${placeName}**
 
-    const categoryText = place.category ? `Category: ${place.category}` : null;
-    const descriptionText = place.description ? `Description: ${place.description}` : null;
-    const mapUrlText = `🔗 View on Map: ${mapUrl}`;
+A new place has been added to the map! 🗺️
+${placeDescription ? `\n**Description:** ${placeDescription}` : ''}
+${address ? `\n**Address:** ${address}` : ''}
+${category ? `\n**Category:** ${category}` : ''}
 
-    // Create content
-    let postContent = `A new place has been added to the map! 🗺️
-${addressText}
-${categoryText || ''}
-${descriptionText || ''}
+🔗 **[View on Map](${mapUrl})**
 
-${mapUrlText}`;
+Click the link above to explore this location and all other places on our interactive map!`;
 
-    // Add image info if we have an attachment
-    if (attachmentId) {
-      postContent += '\n📸 See the map location in the image attached below!';
-    }
-    
     const step3Duration = Date.now() - step3Start;
-    console.log(`✅ Step 3 completed in ${step3Duration}ms - Content prepared (${postContent.length} chars)`);
+    console.log(`✅ Step 3 completed in ${step3Duration}ms - Content prepared (${content.length} chars)`);
 
-    // Step 4: Create/find forum
+    // Step 4: Get bizId and create/find forum
     const step4Start = Date.now();
     console.log(`🏛️ Step 4: Creating/finding Places Forum...`);
     
+    const bizId = whopExperience.experience?.company.id;
+    if (!bizId) {
+      console.error(`❌ Step 4 failed - No bizId found`);
+      return { success: false, reason: "No bizId found" };
+    }
+
+    // Use the same pattern as the working code
     let forumId: string | null = null;
     try {
-      const forumResult = await whopApi
-        .withCompany(bizId)
-        .findOrCreateForum({
-          input: {
-            experienceId: experienceId,
-            name: "Places Forum",
-            whoCanPost: "everyone",
-          },
-        });
+      const forumResult = await resilientWhopCall(
+        () => whopApi
+          .withCompany(bizId)
+          .findOrCreateForum({
+            input: {
+              experienceId: experienceId,
+              name: "Places Forum",
+              whoCanPost: "everyone",
+            },
+          }),
+        "findOrCreateForum",
+        5000
+      );
       
-      forumId = forumResult.createForum?.id || experienceId;
-      const step4Duration = Date.now() - step4Start;
-      console.log(`✅ Step 4 completed in ${step4Duration}ms - Forum ready: ${forumId}`);
-    } catch (error: any) {
-      const step4Duration = Date.now() - step4Start;
-      console.log(`⚠️ Step 4 completed in ${step4Duration}ms - Using experienceId as forumId fallback`);
+      forumId = forumResult?.createForum?.id || experienceId;
+    } catch (error) {
+      console.log(`⚠️ Forum creation attempt failed, using experienceId as fallback...`);
       forumId = experienceId;
     }
 
     if (!forumId) {
-      console.error("❌ Could not create or find forum - aborting");
-      return;
+      console.error(`❌ Step 4 failed - Cannot create/find forum`);
+      return { success: false, reason: "Forum creation timeout" };
     }
 
-    // Step 5: Prepare forum post
+    const step4Duration = Date.now() - step4Start;
+    console.log(`✅ Step 4 completed in ${step4Duration}ms - Forum ready: ${forumId}`);
+
+    // Step 5: Prepare forum post input
     const step5Start = Date.now();
     console.log(`🛠️ Step 5: Preparing forum post input...`);
+    console.log(`📎 Including pre-uploaded attachment: ${attachmentId}`);
     
-    const forumPostInput: any = {
+    const forumPostInput = {
       forumExperienceId: forumId,
-      title: `📍 New Place Added: ${place.name}`,
-      content: postContent,
+      title: `📍 New Place Added: ${placeName}`,
+      content,
       isMention: true,
-    };
-
-    // OPTIMIZATION: Use pre-uploaded attachment if available
-    if (attachmentId) {
-      forumPostInput.attachments = [
+      attachments: [
         {
           directUploadId: attachmentId,
         },
-      ];
-      console.log(`📎 Including pre-uploaded attachment: ${attachmentId}`);
-    } else {
-      console.log(`📝 Creating text-only post (no attachment)`);
-    }
-    
+      ],
+    };
+
     const step5Duration = Date.now() - step5Start;
     console.log(`✅ Step 5 completed in ${step5Duration}ms - Post input prepared`);
 
-    // Step 6: Create forum post
+    // Step 6: Create forum post with timeout
     const step6Start = Date.now();
     console.log(`📤 Step 6: Creating forum post...`);
     
-    const postResult = await whopApi
-      .withCompany(bizId)
-      .createForumPost({
-        input: forumPostInput,
-      });
+    const postResult = await resilientWhopCall(
+      () => whopApi
+        .withCompany(bizId)
+        .createForumPost({
+          input: forumPostInput,
+        }),
+      "createForumPost",
+      5000
+    );
+
+    if (!postResult?.createForumPost?.id) {
+      console.error(`❌ Step 6 failed - Forum post creation timeout or no ID returned`);
+      return { success: false, reason: "Forum post creation timeout" };
+    }
 
     const step6Duration = Date.now() - step6Start;
-    const totalDuration = Date.now() - totalStartTime;
+    const totalDuration = Date.now() - startTime;
 
-    if (postResult.createForumPost) {
-      console.log(`✅ Step 6 completed in ${step6Duration}ms - Forum post created!`);
-      console.log(`📝 Post ID: ${postResult.createForumPost.id}`);
-      
-      if (attachmentId) {
-        console.log(`📸 With pre-uploaded attachment: ${attachmentId}`);
-      } else {
-        console.log(`📝 Text-only post (no image)`);
-      }
-      
-      console.log(`🎯 === FORUM POST CREATION COMPLETE ===`);
-      console.log(`⏱️ TOTAL TIME: ${totalDuration}ms`);
-      console.log(`📊 BREAKDOWN:`);
-      console.log(`   - Step 1 (Experience): ${step1Duration}ms`);
-      console.log(`   - Step 2 (URL): ${step2Duration}ms`);
-      console.log(`   - Step 3 (Content): ${step3Duration}ms`);
-      console.log(`   - Step 4 (Forum): ${Date.now() - step4Start}ms`);
-      console.log(`   - Step 5 (Prepare): ${step5Duration}ms`);
-      console.log(`   - Step 6 (Post): ${step6Duration}ms`);
-    } else {
-      console.error(`❌ Step 6 failed in ${step6Duration}ms - No forum post created`);
-    }
+    console.log(`✅ Step 6 completed in ${step6Duration}ms - Forum post created!`);
+    console.log(`📝 Post ID: ${postResult.createForumPost.id}`);
+    console.log(`📸 With pre-uploaded attachment: ${attachmentId}`);
+    console.log(`🎯 === FORUM POST CREATION COMPLETE ===`);
+    console.log(`⏱️ TOTAL TIME: ${totalDuration}ms`);
+    console.log(`📊 BREAKDOWN:`);
+    console.log(`   - Step 1 (Experience): ${step1Duration}ms`);
+    console.log(`   - Step 2 (URL): ${step2Duration}ms`);
+    console.log(`   - Step 3 (Content): ${step3Duration}ms`);
+    console.log(`   - Step 4 (Forum): ${step4Duration}ms`);
+    console.log(`   - Step 5 (Prepare): ${step5Duration}ms`);
+    console.log(`   - Step 6 (Post): ${step6Duration}ms`);
+
+    return { 
+      success: true, 
+      postId: postResult.createForumPost.id, 
+      duration: totalDuration,
+      attachmentId 
+    };
 
   } catch (error) {
-    const totalDuration = Date.now() - totalStartTime;
+    const totalDuration = Date.now() - startTime;
     console.error(`❌ Forum post creation failed after ${totalDuration}ms:`, error);
-    
-    // OPTIMIZATION: Always provide fallback notification
-    console.log(`=== FALLBACK: New Place Added ===`);
-    console.log(`📍 ${place.name}`);
-    if (place.address) console.log(`📍 ${place.address}`);
-    if (place.description) console.log(`📝 ${place.description}`);
-    
-    // Send basic webhook notification
-    if (process.env.DEFAULT_WEBHOOK_URL) {
-      try {
-        await fetch(process.env.DEFAULT_WEBHOOK_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            content: `📍 New place added: **${place.name}**${place.address ? `\n📍 ${place.address}` : ''}`
-          })
-        });
-        console.log(`✅ Fallback webhook sent`);
-      } catch (webhookError) {
-        console.error("Fallback webhook failed:", webhookError);
-      }
-    }
+    return { 
+      success: false, 
+      reason: error instanceof Error ? error.message : "Unknown error",
+      duration: totalDuration 
+    };
   }
 }

@@ -147,25 +147,21 @@ async function postHandler(request: Request): Promise<NextResponse> {
         if (attachmentId) {
           console.log(`🚀 Creating forum post with pre-uploaded attachment: ${attachmentId}`);
           createPlaceAnnouncementPostWithAttachment({
-            place,
             experienceId,
-            userId: userToken.userId,
-            bizId,
-            attachmentId, // Use the pre-uploaded attachment
+            placeName: place.name,
+            placeDescription: place.description || undefined,
+            latitude: place.latitude,
+            longitude: place.longitude,
+            address: place.address || undefined,
+            category: place.category || undefined,
+            attachmentId,
           }).catch((error: any) => {
             console.error("Background forum post creation with attachment failed:", error);
           });
         } else {
           console.log(`🚀 Creating forum post without attachment (client-side upload failed)`);
-          createPlaceAnnouncementPostWithAttachment({
-            place,
-            experienceId,
-            userId: userToken.userId,
-            bizId,
-            attachmentId: null, // No attachment
-          }).catch((error: any) => {
-            console.error("Background forum post creation failed:", error);
-          });
+          // Skip forum post creation if no attachment - the client-side approach should always provide one
+          console.log(`⚠️ Skipping forum post creation - no attachment provided`);
         }
       });
       
